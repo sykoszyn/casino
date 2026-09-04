@@ -5,6 +5,7 @@
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
+    "build": "echo 'no build step required'",
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
