@@ -3,6 +3,7 @@
 import type React from 'react';
 import { useState } from 'react';
 import { Sidebar } from '@/components/sidebar';
+import { MessageNotifications } from '@/components/notifications/message-notifications';
 import type { Project } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { Menu, X } from 'lucide-react';
@@ -22,6 +23,8 @@ export function ResponsiveShell({
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <MessageNotifications projectId={project.id} projectName={project.name} slug={project.slug} />
+
       {open && <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setOpen(false)} />}
 
       <div
