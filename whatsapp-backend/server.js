@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const { startInstance, stopInstance, requestPairingCode, sendMessage, isActive } = require('./src/instanceManager');
+const { startInstance, stopInstance, requestPairingCode, sendMessage, sendMedia, isActive } = require('./src/instanceManager');
 
 const PORT = process.env.PORT || 4000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -19,7 +19,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '20mb' })); // las fotos viajan en base64 dentro del body
 
 async function getInstanceOr404(req, res) {
   const { instanceId } = req.params;
@@ -109,6 +109,18 @@ app.post('/instances/:instanceId/send', async (req, res) => {
     const { to, text } = req.body;
     if (!to || !text) return res.status(400).json({ error: 'to y text son requeridos' });
     const result = await sendMessage(req.params.instanceId, to, text);
+    res.json({ ok: true, result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/instances/:instanceId/send-media', async (req, res) => {
+  try {
+    const { to, mediaBase64, mimeType, caption } = req.body;
+    if (!to || !mediaBase64) return res.status(400).json({ error: 'to y mediaBase64 son requeridos' });
+    const result = await sendMedia(req.params.instanceId, to, mediaBase64, mimeType, caption);
     res.json({ ok: true, result });
   } catch (err) {
     console.error(err);

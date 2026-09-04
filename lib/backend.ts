@@ -22,4 +22,9 @@ export const whatsappBackend = {
   status: (instanceId: string) => request(`/instances/${instanceId}/status`),
   send: (instanceId: string, to: string, text: string) =>
     request(`/instances/${instanceId}/send`, { method: 'POST', body: JSON.stringify({ to, text }) }),
+  sendMedia: (instanceId: string, to: string, mediaBase64: string, mimeType: string, caption?: string) =>
+    request(`/instances/${instanceId}/send-media`, {
+      method: 'POST',
+      body: JSON.stringify({ to, mediaBase64, mimeType, caption }),
+    }),
 };

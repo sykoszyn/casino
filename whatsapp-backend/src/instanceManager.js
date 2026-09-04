@@ -7,7 +7,7 @@ const {
 const pino = require('pino');
 const QRCode = require('qrcode');
 const { useSupabaseAuthState } = require('./supabaseAuthState');
-const { handleIncomingMessage } = require('./messages');
+const { handleIncomingMessage, updateMessageStatus } = require('./messages');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 
@@ -15,6 +15,20 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
 const sockets = new Map();
 /** instanceId -> promise, evita arrancar la misma instancia dos veces en paralelo */
 const starting = new Map();
+/** instanceId -> cantidad de reconexiones fallidas seguidas (se resetea al abrir bien) */
+const reconnectAttempts = new Map();
+
+const MAX_RECONNECT_ATTEMPTS = 6;
+
+// Motivos de desconexión que Baileys resuelve solo reconectando: no son errores
+// reales, así que no hay que mostrarlos como "Error" en la UI.
+const RECONNECTABLE_REASONS = new Set([
+  DisconnectReason.restartRequired, // pasa siempre justo después de escanear el QR por primera vez
+  DisconnectReason.connectionClosed,
+  DisconnectReason.connectionLost,
+  DisconnectReason.timedOut,
+  undefined, // cierre sin código explícito (ej. reinicio del proceso)
+]);
 
 function isActive(instanceId) {
   return sockets.has(instanceId);
@@ -65,6 +79,7 @@ async function startInstance(supabase, instance) {
       }
 
       if (connection === 'open') {
+        reconnectAttempts.delete(instanceId);
         const phoneNumber = sock.user?.id?.split(':')[0]?.split('@')[0] || instance.phone_number;
         await supabase
           .from('whatsapp_instances')
@@ -82,38 +97,88 @@ async function startInstance(supabase, instance) {
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const loggedOut = statusCode === DisconnectReason.loggedOut;
+        const needsRelink = statusCode === DisconnectReason.badSession || statusCode === DisconnectReason.multideviceMismatch;
+        const replaced = statusCode === DisconnectReason.connectionReplaced;
         sockets.delete(instanceId);
 
-        await supabase
-          .from('whatsapp_instances')
-          .update({
-            status: loggedOut ? 'disconnected' : 'error',
-            qr_code: null,
-            error_message: loggedOut ? null : lastDisconnect?.error?.message || 'Conexión cerrada inesperadamente',
-          })
-          .eq('id', instanceId);
-
-        if (loggedOut) {
+        if (loggedOut || needsRelink) {
+          await supabase
+            .from('whatsapp_instances')
+            .update({ status: 'disconnected', qr_code: null, error_message: null })
+            .eq('id', instanceId);
           await clearCreds();
-          console.log(`[instance ${instanceId}] logout, sesión limpiada`);
-        } else {
-          console.warn(`[instance ${instanceId}] desconectada, reintentando en 5s...`);
-          setTimeout(() => {
-            supabase
-              .from('whatsapp_instances')
-              .select('*')
-              .eq('id', instanceId)
-              .single()
-              .then(({ data }) => data && startInstance(supabase, data).catch(console.error));
-          }, 5000);
+          reconnectAttempts.delete(instanceId);
+          console.log(`[instance ${instanceId}] logout/sesión inválida, hay que volver a vincular`);
+          return;
         }
+
+        if (replaced) {
+          await supabase
+            .from('whatsapp_instances')
+            .update({ status: 'error', qr_code: null, error_message: 'Se vinculó desde otro lugar. Desconectá esa sesión o creá una línea nueva.' })
+            .eq('id', instanceId);
+          reconnectAttempts.delete(instanceId);
+          return;
+        }
+
+        const attempts = (reconnectAttempts.get(instanceId) || 0) + 1;
+        reconnectAttempts.set(instanceId, attempts);
+
+        if (attempts > MAX_RECONNECT_ATTEMPTS) {
+          await supabase
+            .from('whatsapp_instances')
+            .update({
+              status: 'error',
+              qr_code: null,
+              error_message: 'No se pudo reconectar tras varios intentos. Probá desconectar y crear la línea de nuevo.',
+            })
+            .eq('id', instanceId);
+          reconnectAttempts.delete(instanceId);
+          console.error(`[instance ${instanceId}] se agotaron los reintentos de reconexión`);
+          return;
+        }
+
+        // restartRequired (y similares) son parte normal del handshake: no lo
+        // marcamos como error para no asustar en la UI, solo reconectamos.
+        const isExpectedRestart = statusCode === DisconnectReason.restartRequired;
+        if (!RECONNECTABLE_REASONS.has(statusCode)) {
+          await supabase
+            .from('whatsapp_instances')
+            .update({
+              status: 'error',
+              qr_code: null,
+              error_message: lastDisconnect?.error?.message || 'Conexión cerrada inesperadamente, reintentando...',
+            })
+            .eq('id', instanceId);
+        }
+
+        const delay = isExpectedRestart ? 300 : Math.min(1000 * 2 ** (attempts - 1), 20000);
+        console.warn(`[instance ${instanceId}] reconectando en ${delay}ms (intento ${attempts})`);
+        setTimeout(() => {
+          supabase
+            .from('whatsapp_instances')
+            .select('*')
+            .eq('id', instanceId)
+            .single()
+            .then(({ data }) => data && startInstance(supabase, data).catch(console.error));
+        }, delay);
       }
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify') return;
       for (const msg of messages) {
-        await handleIncomingMessage(supabase, projectId, instanceId, msg);
+        await handleIncomingMessage(supabase, sock, projectId, instanceId, msg);
+      }
+    });
+
+    // Confirmaciones de entrega/lectura de los mensajes que mandamos (tildes del chat)
+    sock.ev.on('messages.update', async (updates) => {
+      for (const { key, update } of updates) {
+        if (update.status === undefined || update.status === null) continue;
+        await updateMessageStatus(supabase, instanceId, key.id, update.status).catch((e) =>
+          console.error(`[instance ${instanceId}] error actualizando estado de mensaje:`, e.message)
+        );
       }
     });
 
@@ -140,6 +205,7 @@ async function requestPairingCode(supabase, instance, phoneNumber) {
 
 async function stopInstance(supabase, instanceId, { logout } = { logout: false }) {
   const entry = sockets.get(instanceId);
+  reconnectAttempts.delete(instanceId);
   if (!entry) return;
   try {
     if (logout) {
@@ -154,11 +220,29 @@ async function stopInstance(supabase, instanceId, { logout } = { logout: false }
   }
 }
 
+function resolveJid(to) {
+  return to.includes('@') ? to : `${to.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+}
+
 async function sendMessage(instanceId, to, text) {
   const entry = sockets.get(instanceId);
   if (!entry) throw new Error('La instancia no está conectada');
-  const jid = to.includes('@') ? to : `${to.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
-  return entry.sock.sendMessage(jid, { text });
+  return entry.sock.sendMessage(resolveJid(to), { text });
 }
 
-module.exports = { startInstance, stopInstance, requestPairingCode, sendMessage, isActive, sockets };
+async function sendMedia(instanceId, to, mediaBase64, mimeType, caption) {
+  const entry = sockets.get(instanceId);
+  if (!entry) throw new Error('La instancia no está conectada');
+
+  const base64Data = mediaBase64.includes(',') ? mediaBase64.split(',')[1] : mediaBase64;
+  const buffer = Buffer.from(base64Data, 'base64');
+  const isVideo = mimeType?.startsWith('video/');
+
+  const payload = isVideo
+    ? { video: buffer, caption, mimetype: mimeType || 'video/mp4' }
+    : { image: buffer, caption, mimetype: mimeType || 'image/jpeg' };
+
+  return entry.sock.sendMessage(resolveJid(to), payload);
+}
+
+module.exports = { startInstance, stopInstance, requestPairingCode, sendMessage, sendMedia, isActive, sockets };

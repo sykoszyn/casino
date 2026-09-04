@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
+import { getProjectBySlug } from '@/lib/data/get-project';
 import { PageHeader } from '@/components/page-header';
 import { InboxShell } from '@/components/inbox/inbox-shell';
 
 export default async function InboxPage({ params }: { params: { slug: string } }) {
   const supabase = createClient();
-  const { data: project } = await supabase.from('projects').select('id').eq('slug', params.slug).single();
+  const project = await getProjectBySlug(params.slug);
   if (!project) return null;
 
   const { data: conversations } = await supabase

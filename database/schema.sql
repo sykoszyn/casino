@@ -150,9 +150,20 @@ create or replace function public.touch_conversation_on_message()
 returns trigger
 language plpgsql
 as $$
+declare
+  preview text;
 begin
+  preview := case
+    when new.message_type = 'image' then coalesce(nullif(new.content, ''), '📷 Foto')
+    when new.message_type = 'video' then coalesce(nullif(new.content, ''), '🎥 Video')
+    when new.message_type = 'audio' then '🎤 Audio'
+    when new.message_type = 'document' then coalesce(nullif(new.content, ''), '📎 Documento')
+    when new.message_type = 'sticker' then '🖼️ Sticker'
+    else coalesce(new.content, '')
+  end;
+
   update public.conversations
-     set last_message_preview = left(coalesce(new.content, ''), 200),
+     set last_message_preview = left(preview, 200),
          last_message_at      = new.created_at,
          unread_count         = case when new.direction = 'inbound'
                                       then unread_count + 1
@@ -226,12 +237,56 @@ create policy "authenticated_all_messages" on public.messages
 -- ----------------------------------------------------------------------------
 -- 7. REALTIME
 -- ----------------------------------------------------------------------------
-alter publication supabase_realtime add table public.whatsapp_instances;
-alter publication supabase_realtime add table public.conversations;
-alter publication supabase_realtime add table public.messages;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'whatsapp_instances'
+  ) then
+    alter publication supabase_realtime add table public.whatsapp_instances;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'conversations'
+  ) then
+    alter publication supabase_realtime add table public.conversations;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages'
+  ) then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+end $$;
 
 -- ----------------------------------------------------------------------------
--- 8. SEED DATA — datos de prueba realistas
+-- 8. STORAGE — bucket público para las fotos/videos que se envían y reciben
+-- por WhatsApp. Es público para que las imágenes se puedan mostrar en el
+-- chat con un <img src> directo, sin pasar por auth. Las rutas dentro del
+-- bucket van organizadas por proyecto/línea ("<project_id>/<instance_id>/...")
+-- pero al ser un bucket público cualquiera con el link exacto puede verla
+-- (igual que casi cualquier CDN de imágenes de chat).
+-- ----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('media', 'media', true)
+on conflict (id) do nothing;
+
+drop policy if exists "authenticated_upload_media" on storage.objects;
+create policy "authenticated_upload_media" on storage.objects
+  for insert
+  to authenticated
+  with check (bucket_id = 'media');
+
+drop policy if exists "authenticated_delete_media" on storage.objects;
+create policy "authenticated_delete_media" on storage.objects
+  for delete
+  to authenticated
+  using (bucket_id = 'media');
+
+-- ----------------------------------------------------------------------------
+-- 9. SEED DATA — datos de prueba realistas
 -- ----------------------------------------------------------------------------
 insert into public.projects (name, slug, description, status)
 values

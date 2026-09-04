@@ -9,16 +9,20 @@ import type { Project } from '@/lib/types';
 export default async function ProjectsPage() {
   const supabase = createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // El middleware ya validó la sesión (auth.getUser(), con red) para este
+  // mismo request; acá solo la leemos de la cookie, sin otro round-trip.
+  const [
+    {
+      data: { session },
+    },
+    { data: projects },
+  ] = await Promise.all([
+    supabase.auth.getSession(),
+    supabase.from('projects').select('*').order('created_at', { ascending: false }),
+  ]);
 
-  if (!user) redirect('/login');
-
-  const { data: projects } = await supabase
-    .from('projects')
-    .select('*')
-    .order('created_at', { ascending: false });
+  if (!session) redirect('/login');
+  const user = session.user;
 
   return (
     <div className="min-h-screen bg-background">

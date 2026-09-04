@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server';
+import { getProjectBySlug } from '@/lib/data/get-project';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Phone, Inbox, MessageSquare, Users } from 'lucide-react';
 
 export default async function OverviewPage({ params }: { params: { slug: string } }) {
   const supabase = createClient();
-  const { data: project } = await supabase.from('projects').select('id').eq('slug', params.slug).single();
+  const project = await getProjectBySlug(params.slug);
   if (!project) return null;
 
   const [{ count: instancesCount }, { count: connectedCount }, { count: conversationsCount }, { count: contactsCount }] =
