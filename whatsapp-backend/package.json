@@ -1,0 +1,23 @@
+{
+  "name": "whatsapp-backend",
+  "version": "1.0.0",
+  "description": "Microservicio 24/7 que maneja las sesiones de WhatsApp (Baileys) por instancia y las sincroniza con Supabase.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "@whiskeysockets/baileys": "^6.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pino": "^9.4.0",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
