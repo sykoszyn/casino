@@ -222,36 +222,49 @@ export function ChatWindow({
         ) : (
           messages.map((msg) => {
             const isSticker = msg.message_type === 'sticker' && !!msg.media_url;
+            const isImage = msg.message_type === 'image' && !!msg.media_url;
             return (
               <div key={msg.id} className={cn('flex', msg.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
                 <div
                   className={cn(
                     isSticker
                       ? 'max-w-[60%] sm:max-w-[40%]'
-                      : cn(
-                          'max-w-[85%] rounded-lg px-3 py-2 text-sm sm:max-w-[70%]',
-                          msg.direction === 'outbound' ? 'bg-primary text-primary-foreground' : 'bg-secondary'
-                        )
+                      : isImage
+                        ? 'max-w-[90%] overflow-hidden rounded-lg sm:max-w-[420px]'
+                        : cn(
+                            'max-w-[85%] rounded-lg px-3 py-2 text-sm sm:max-w-[70%]',
+                            msg.direction === 'outbound' ? 'bg-primary text-primary-foreground' : 'bg-secondary'
+                          )
                   )}
                 >
-                  {msg.message_type === 'image' && msg.media_url && (
+                  {isImage && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={msg.media_url} alt="" className="mb-1 max-h-72 max-w-full rounded-md object-contain" />
+                    <img src={msg.media_url ?? undefined} alt="" className="max-h-[70vh] w-full object-contain" />
                   )}
                   {isSticker && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={msg.media_url ?? undefined} alt="" className="h-32 w-32 object-contain" />
                   )}
-                  {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                  <div
-                    className={cn(
-                      'mt-1 flex items-center justify-end gap-1 text-[10px]',
-                      isSticker ? 'text-muted-foreground' : 'opacity-70'
-                    )}
-                  >
-                    <span>{new Date(msg.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
-                    {msg.direction === 'outbound' && <MessageTicks status={msg.status} />}
-                  </div>
+                  {!isSticker && (
+                    <div className={cn(isImage && 'bg-secondary/80 px-3 py-2', msg.direction === 'outbound' && isImage && 'bg-primary/90')}>
+                      {msg.content && <p className="whitespace-pre-wrap break-words text-sm">{msg.content}</p>}
+                      <div
+                        className={cn(
+                          'mt-1 flex items-center justify-end gap-1 text-[10px]',
+                          isImage && msg.direction === 'outbound' ? 'text-primary-foreground opacity-70' : 'opacity-70'
+                        )}
+                      >
+                        <span>{new Date(msg.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {msg.direction === 'outbound' && <MessageTicks status={msg.status} />}
+                      </div>
+                    </div>
+                  )}
+                  {isSticker && (
+                    <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+                      <span>{new Date(msg.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                      {msg.direction === 'outbound' && <MessageTicks status={msg.status} />}
+                    </div>
+                  )}
                 </div>
               </div>
             );
