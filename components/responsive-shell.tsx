@@ -23,8 +23,6 @@ export function ResponsiveShell({
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      <MessageNotifications projectId={project.id} projectName={project.name} slug={project.slug} />
-
       {open && <div className="fixed inset-0 z-40 bg-black/60 md:hidden" onClick={() => setOpen(false)} />}
 
       <div
@@ -43,6 +41,7 @@ export function ResponsiveShell({
           </button>
           <span className="truncate text-sm font-medium uppercase">{project.name}</span>
         </div>
+        <MessageNotifications projectId={project.id} projectName={project.name} slug={project.slug} />
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>

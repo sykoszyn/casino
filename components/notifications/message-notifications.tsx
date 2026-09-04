@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
 import type { Message, MessageType } from '@/lib/types';
+import { Bell, X } from 'lucide-react';
 
 const PREVIEW_BY_TYPE: Partial<Record<MessageType, string>> = {
   image: '📷 Foto',
@@ -11,6 +13,8 @@ const PREVIEW_BY_TYPE: Partial<Record<MessageType, string>> = {
   document: '📎 Documento',
   sticker: '🖼️ Sticker',
 };
+
+const DISMISS_KEY = 'nexowa-notif-banner-dismissed';
 
 function playBeep() {
   try {
@@ -47,15 +51,30 @@ function playBeep() {
  */
 export function MessageNotifications({ projectId, projectName, slug }: { projectId: string; projectName: string; slug: string }) {
   const supabase = createClient();
-  const permissionRequested = useRef(false);
+  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('default');
+  const [dismissed, setDismissed] = useState(true); // arranca true para no parpadear en el primer render (SSR/CSR)
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) return;
-    if (!permissionRequested.current && Notification.permission === 'default') {
-      permissionRequested.current = true;
-      Notification.requestPermission().catch(() => {});
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setPermission('unsupported');
+      return;
     }
+    setPermission(Notification.permission);
+    setDismissed(localStorage.getItem(DISMISS_KEY) === '1');
   }, []);
+
+  function handleEnable() {
+    // OJO: esto tiene que llamarse directo desde el onClick de un botón. Si
+    // se llama solo (sin que el usuario haga clic en algo), Chrome/Firefox
+    // bloquean el popup de permiso sin avisar y queda trabado en "default"
+    // para siempre — eso era justo lo que pasaba antes.
+    Notification.requestPermission().then((result) => setPermission(result));
+  }
+
+  function handleDismiss() {
+    setDismissed(true);
+    localStorage.setItem(DISMISS_KEY, '1');
+  }
 
   useEffect(() => {
     const channel = supabase
@@ -94,5 +113,31 @@ export function MessageNotifications({ projectId, projectName, slug }: { project
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  return null;
+  if (permission === 'unsupported' || permission === 'granted' || dismissed) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-secondary/60 px-4 py-2 text-sm">
+      <div className="flex items-center gap-2">
+        <Bell className="h-4 w-4 shrink-0 text-primary" />
+        {permission === 'denied' ? (
+          <span>
+            Bloqueaste las notificaciones de este sitio. Para activarlas, entrá a la configuración del navegador (ícono de
+            candado/info al lado de la URL) y permitilas a mano.
+          </span>
+        ) : (
+          <span>Activá las notificaciones para enterarte de los mensajes nuevos aunque tengas la pestaña minimizada.</span>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {permission === 'default' && (
+          <Button size="sm" onClick={handleEnable}>
+            Activar
+          </Button>
+        )}
+        <button onClick={handleDismiss} className="text-muted-foreground hover:text-foreground">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
 }
