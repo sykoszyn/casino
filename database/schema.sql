@@ -287,4 +287,4 @@ join (values
   ('5491126208331@s.whatsapp.net', 'inbound',  'Abel0309z J', 'Felicidades premio abonado!', interval '25 minutes')
 ) as m(wa_id, direction, sender_name, content, age)
   on ct.wa_id = m.wa_id
-order by created_at;
+order by m.age desc;
