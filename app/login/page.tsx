@@ -35,7 +35,11 @@ export default function LoginPage() {
         router.refresh();
       }
     } else {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+      });
       if (error) setError(error.message);
       else setMessage('Cuenta creada. Si tu proyecto pide confirmación de email, revisá tu bandeja de entrada.');
     }

@@ -28,6 +28,13 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // /auth/* maneja el intercambio del link de confirmación de email y no
+  // necesita sesión previa (todavía no existe cuando llega el link) ni debe
+  // redirigir a nadie: la ruta se encarga sola de a dónde mandar al usuario.
+  if (request.nextUrl.pathname.startsWith('/auth')) {
+    return response;
+  }
+
   const isAuthRoute = request.nextUrl.pathname.startsWith('/login');
 
   if (!user && !isAuthRoute) {
