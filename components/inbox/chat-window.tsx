@@ -6,9 +6,10 @@ import { createClient } from '@/lib/supabase/client';
 import { whatsappBackend } from '@/lib/backend';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { QuickRepliesMenu } from './quick-replies-menu';
 import { cn } from '@/lib/utils';
-import type { Conversation, Message, MessageStatus } from '@/lib/types';
-import { Send, Loader2, Check, CheckCheck, Paperclip } from 'lucide-react';
+import type { Conversation, Message, MessageStatus, QuickReply } from '@/lib/types';
+import { Send, Loader2, Check, CheckCheck, Paperclip, Archive, ArchiveRestore } from 'lucide-react';
 
 function MessageTicks({ status }: { status: MessageStatus }) {
   if (status === 'failed') return <span className="text-[10px] text-destructive">Error al enviar</span>;
@@ -26,12 +27,21 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-export function ChatWindow({ conversation }: { conversation: Conversation }) {
+export function ChatWindow({
+  conversation,
+  quickReplies,
+  onArchivedChange,
+}: {
+  conversation: Conversation;
+  quickReplies: QuickReply[];
+  onArchivedChange?: () => void;
+}) {
   const supabase = createClient();
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -130,13 +140,44 @@ export function ChatWindow({ conversation }: { conversation: Conversation }) {
     }
   }
 
+  async function handleToggleArchive() {
+    setArchiving(true);
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .update({ archived: !conversation.archived })
+        .eq('id', conversation.id);
+      if (error) throw error;
+      onArchivedChange?.();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'No se pudo archivar la conversación');
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   const contactLabel = conversation.contact?.name || conversation.contact?.phone_number || 'Contacto';
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border p-3">
-        <p className="text-sm font-medium">{contactLabel}</p>
-        <p className="text-xs text-muted-foreground">{conversation.contact?.phone_number}</p>
+        <div>
+          <p className="text-sm font-medium">{contactLabel}</p>
+          <p className="text-xs text-muted-foreground">{conversation.contact?.phone_number}</p>
+        </div>
+        <Button size="sm" variant="outline" disabled={archiving} onClick={handleToggleArchive}>
+          {archiving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : conversation.archived ? (
+            <>
+              <ArchiveRestore className="h-3.5 w-3.5" /> Desarchivar
+            </>
+          ) : (
+            <>
+              <Archive className="h-3.5 w-3.5" /> Archivar
+            </>
+          )}
+        </Button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
@@ -183,6 +224,7 @@ export function ChatWindow({ conversation }: { conversation: Conversation }) {
         >
           {sendingMedia ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
         </Button>
+        <QuickRepliesMenu quickReplies={quickReplies} onSelect={(content) => setText((prev) => (prev ? `${prev} ${content}` : content))} />
         <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Escribí un mensaje..." disabled={sending} />
         <Button type="submit" size="icon" disabled={sending || !text.trim()}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

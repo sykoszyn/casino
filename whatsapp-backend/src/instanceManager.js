@@ -249,4 +249,19 @@ async function sendMedia(instanceId, to, mediaBase64, mimeType, caption) {
   return entry.sock.sendMessage(resolveJid(to), payload);
 }
 
-module.exports = { startInstance, stopInstance, requestPairingCode, sendMessage, sendMedia, isActive, sockets };
+async function setContactBlocked(instanceId, jid, blocked) {
+  const entry = sockets.get(instanceId);
+  if (!entry) throw new Error('La instancia no está conectada');
+  return entry.sock.updateBlockStatus(resolveJid(jid), blocked ? 'block' : 'unblock');
+}
+
+module.exports = {
+  startInstance,
+  stopInstance,
+  requestPairingCode,
+  sendMessage,
+  sendMedia,
+  setContactBlocked,
+  isActive,
+  sockets,
+};

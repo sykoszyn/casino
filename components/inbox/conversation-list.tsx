@@ -12,19 +12,30 @@ export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  showArchived,
+  onToggleArchived,
+  loadingArchived,
 }: {
   conversations: Conversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  showArchived: boolean;
+  onToggleArchived: () => void;
+  loadingArchived: boolean;
 }) {
   return (
     <div className="flex w-80 shrink-0 flex-col border-r border-border">
-      <div className="border-b border-border p-3">
-        <p className="text-sm font-medium">Inbox</p>
+      <div className="flex items-center justify-between border-b border-border p-3">
+        <p className="text-sm font-medium">{showArchived ? 'Archivadas' : 'Inbox'}</p>
+        <button onClick={onToggleArchived} className="text-xs text-muted-foreground hover:text-foreground hover:underline" disabled={loadingArchived}>
+          {loadingArchived ? 'Cargando...' : showArchived ? 'Ver activas' : 'Ver archivadas'}
+        </button>
       </div>
       <ScrollArea className="flex-1">
         {!conversations.length ? (
-          <p className="p-4 text-center text-sm text-muted-foreground">Sin conversaciones todavía.</p>
+          <p className="p-4 text-center text-sm text-muted-foreground">
+            {showArchived ? 'No hay conversaciones archivadas.' : 'Sin conversaciones todavía.'}
+          </p>
         ) : (
           conversations.map((conv) => {
             const label = conv.contact?.name || conv.contact?.phone_number || 'Desconocido';

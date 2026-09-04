@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ContactPanel } from './contact-panel';
-import type { Conversation } from '@/lib/types';
+import type { Conversation, QuickReply } from '@/lib/types';
 import { MessagesSquare } from 'lucide-react';
 
 function sortConversations(list: Conversation[]) {
@@ -16,10 +16,21 @@ function sortConversations(list: Conversation[]) {
   });
 }
 
-export function InboxShell({ projectId, initialConversations }: { projectId: string; initialConversations: Conversation[] }) {
+export function InboxShell({
+  projectId,
+  initialConversations,
+  quickReplies,
+}: {
+  projectId: string;
+  initialConversations: Conversation[];
+  quickReplies: QuickReply[];
+}) {
   const supabase = createClient();
   const [conversations, setConversations] = useState<Conversation[]>(sortConversations(initialConversations));
   const [selectedId, setSelectedId] = useState<string | null>(initialConversations[0]?.id ?? null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedFetched, setArchivedFetched] = useState(false);
+  const [loadingArchived, setLoadingArchived] = useState(false);
 
   useEffect(() => {
     const channel = supabase
@@ -60,7 +71,8 @@ export function InboxShell({ projectId, initialConversations }: { projectId: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const selected = conversations.find((c) => c.id === selectedId) ?? null;
+  const visibleConversations = conversations.filter((c) => c.archived === showArchived);
+  const selected = visibleConversations.find((c) => c.id === selectedId) ?? null;
 
   function handleSelect(id: string) {
     setSelectedId(id);
@@ -68,13 +80,45 @@ export function InboxShell({ projectId, initialConversations }: { projectId: str
     supabase.from('conversations').update({ unread_count: 0 }).eq('id', id).then();
   }
 
+  async function handleToggleArchivedView() {
+    const next = !showArchived;
+    setShowArchived(next);
+    setSelectedId(null);
+
+    if (next && !archivedFetched) {
+      setLoadingArchived(true);
+      const { data } = await supabase
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .eq('project_id', projectId)
+        .eq('archived', true)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .limit(150);
+      setArchivedFetched(true);
+      setLoadingArchived(false);
+      if (data?.length) {
+        setConversations((prev) => {
+          const ids = new Set(prev.map((c) => c.id));
+          return sortConversations([...prev, ...data.filter((c) => !ids.has(c.id))]);
+        });
+      }
+    }
+  }
+
   return (
     <div className="flex h-full">
-      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={handleSelect} />
+      <ConversationList
+        conversations={visibleConversations}
+        selectedId={selectedId}
+        onSelect={handleSelect}
+        showArchived={showArchived}
+        onToggleArchived={handleToggleArchivedView}
+        loadingArchived={loadingArchived}
+      />
 
       <div className="flex-1">
         {selected ? (
-          <ChatWindow conversation={selected} />
+          <ChatWindow conversation={selected} quickReplies={quickReplies} onArchivedChange={() => setSelectedId(null)} />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <MessagesSquare className="h-8 w-8" />

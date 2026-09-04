@@ -27,4 +27,6 @@ export const whatsappBackend = {
       method: 'POST',
       body: JSON.stringify({ to, mediaBase64, mimeType, caption }),
     }),
+  setBlocked: (instanceId: string, jid: string, blocked: boolean) =>
+    request(`/instances/${instanceId}/block`, { method: 'POST', body: JSON.stringify({ jid, blocked }) }),
 };

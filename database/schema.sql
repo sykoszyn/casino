@@ -64,12 +64,18 @@ create table if not exists public.contacts (
   avatar_url            text,
   tags                  text[] not null default '{}',
   notes                 text,
+  blocked               boolean not null default false,
   created_at            timestamptz not null default now(),
   updated_at            timestamptz not null default now(),
   unique (project_id, wa_id)
 );
 
+comment on table public.contacts is 'Un mismo número de WhatsApp genera un contacto por proyecto (project_id, wa_id) es único), así que si le escribe a 2 sucursales cada una puede tener su propio nombre guardado.';
+
 create index if not exists idx_contacts_project on public.contacts(project_id);
+
+-- si la tabla ya existía de antes de que agregáramos "blocked"
+alter table public.contacts add column if not exists blocked boolean not null default false;
 
 -- ----------------------------------------------------------------------------
 -- 4. CONVERSATIONS (un hilo/chat por contacto y línea; agrupa mensajes)
@@ -135,6 +141,30 @@ begin
 end $$;
 
 -- ----------------------------------------------------------------------------
+-- 5.1 QUICK_REPLIES (comandos / respuestas rápidas para el chat)
+-- ----------------------------------------------------------------------------
+create table if not exists public.quick_replies (
+  id          uuid primary key default gen_random_uuid(),
+  project_id  uuid not null references public.projects(id) on delete cascade,
+  shortcut    text not null,
+  content     text not null,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique (project_id, shortcut)
+);
+
+create index if not exists idx_quick_replies_project on public.quick_replies(project_id);
+
+alter table public.quick_replies enable row level security;
+
+drop policy if exists "authenticated_all_quick_replies" on public.quick_replies;
+create policy "authenticated_all_quick_replies" on public.quick_replies
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+-- ----------------------------------------------------------------------------
 -- Trigger genérico para mantener updated_at
 -- ----------------------------------------------------------------------------
 create or replace function public.set_updated_at()
@@ -161,6 +191,10 @@ create trigger trg_contacts_updated_at before update on public.contacts
 
 drop trigger if exists trg_conversations_updated_at on public.conversations;
 create trigger trg_conversations_updated_at before update on public.conversations
+  for each row execute function public.set_updated_at();
+
+drop trigger if exists trg_quick_replies_updated_at on public.quick_replies;
+create trigger trg_quick_replies_updated_at before update on public.quick_replies
   for each row execute function public.set_updated_at();
 
 -- Al insertar un mensaje, actualiza el preview/última fecha/no leídos de la conversación

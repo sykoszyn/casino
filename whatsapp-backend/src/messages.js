@@ -80,22 +80,47 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
       mediaUrl = await uploadMedia(supabase, sock, msg, projectId, instanceId, type, mimetype);
     }
 
-    const { data: contact, error: contactError } = await supabase
+    // No usamos upsert acá a propósito: si el contacto ya existe y alguien le
+    // puso un nombre a mano, no lo queremos pisar con el pushName de WhatsApp
+    // en cada mensaje nuevo.
+    const { data: existingContact, error: existingContactError } = await supabase
       .from('contacts')
-      .upsert(
-        {
+      .select('id, name')
+      .eq('project_id', projectId)
+      .eq('wa_id', jid)
+      .maybeSingle();
+
+    if (existingContactError) throw existingContactError;
+
+    let contact;
+    if (existingContact) {
+      const { data, error } = await supabase
+        .from('contacts')
+        .update({
+          whatsapp_instance_id: instanceId,
+          phone_number: jid.split('@')[0],
+          name: existingContact.name ?? pushName,
+        })
+        .eq('id', existingContact.id)
+        .select('id')
+        .single();
+      if (error) throw error;
+      contact = data;
+    } else {
+      const { data, error } = await supabase
+        .from('contacts')
+        .insert({
           project_id: projectId,
           whatsapp_instance_id: instanceId,
           wa_id: jid,
           name: pushName,
           phone_number: jid.split('@')[0],
-        },
-        { onConflict: 'project_id,wa_id', ignoreDuplicates: false }
-      )
-      .select('id')
-      .single();
-
-    if (contactError) throw contactError;
+        })
+        .select('id')
+        .single();
+      if (error) throw error;
+      contact = data;
+    }
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
@@ -105,6 +130,7 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
           whatsapp_instance_id: instanceId,
           contact_id: contact.id,
           channel: 'wa',
+          archived: false, // cualquier actividad nueva desarchiva el chat
         },
         { onConflict: 'whatsapp_instance_id,contact_id', ignoreDuplicates: false }
       )

@@ -2,7 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const { startInstance, stopInstance, requestPairingCode, sendMessage, sendMedia, isActive } = require('./src/instanceManager');
+const {
+  startInstance,
+  stopInstance,
+  requestPairingCode,
+  sendMessage,
+  sendMedia,
+  setContactBlocked,
+  isActive,
+} = require('./src/instanceManager');
 
 const PORT = process.env.PORT || 4000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -122,6 +130,18 @@ app.post('/instances/:instanceId/send-media', async (req, res) => {
     if (!to || !mediaBase64) return res.status(400).json({ error: 'to y mediaBase64 son requeridos' });
     const result = await sendMedia(req.params.instanceId, to, mediaBase64, mimeType, caption);
     res.json({ ok: true, result });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/instances/:instanceId/block', async (req, res) => {
+  try {
+    const { jid, blocked } = req.body;
+    if (!jid || typeof blocked !== 'boolean') return res.status(400).json({ error: 'jid y blocked (boolean) son requeridos' });
+    await setContactBlocked(req.params.instanceId, jid, blocked);
+    res.json({ ok: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });

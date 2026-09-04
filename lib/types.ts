@@ -39,6 +39,7 @@ export interface Contact {
   avatar_url: string | null;
   tags: string[];
   notes: string | null;
+  blocked: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -77,4 +78,13 @@ export interface Message {
   media_url: string | null;
   status: MessageStatus;
   created_at: string;
+}
+
+export interface QuickReply {
+  id: string;
+  project_id: string;
+  shortcut: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }
