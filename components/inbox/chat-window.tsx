@@ -220,26 +220,42 @@ export function ChatWindow({
         ) : !messages.length ? (
           <p className="text-center text-sm text-muted-foreground">Todavía no hay mensajes en esta conversación.</p>
         ) : (
-          messages.map((msg) => (
-            <div key={msg.id} className={cn('flex', msg.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
-              <div
-                className={cn(
-                  'max-w-[85%] rounded-lg px-3 py-2 text-sm sm:max-w-[70%]',
-                  msg.direction === 'outbound' ? 'bg-primary text-primary-foreground' : 'bg-secondary'
-                )}
-              >
-                {msg.message_type === 'image' && msg.media_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={msg.media_url} alt="" className="mb-1 max-h-72 max-w-full rounded-md object-contain" />
-                )}
-                {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
-                <div className="mt-1 flex items-center justify-end gap-1 text-[10px] opacity-70">
-                  <span>{new Date(msg.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
-                  {msg.direction === 'outbound' && <MessageTicks status={msg.status} />}
+          messages.map((msg) => {
+            const isSticker = msg.message_type === 'sticker' && !!msg.media_url;
+            return (
+              <div key={msg.id} className={cn('flex', msg.direction === 'outbound' ? 'justify-end' : 'justify-start')}>
+                <div
+                  className={cn(
+                    isSticker
+                      ? 'max-w-[60%] sm:max-w-[40%]'
+                      : cn(
+                          'max-w-[85%] rounded-lg px-3 py-2 text-sm sm:max-w-[70%]',
+                          msg.direction === 'outbound' ? 'bg-primary text-primary-foreground' : 'bg-secondary'
+                        )
+                  )}
+                >
+                  {msg.message_type === 'image' && msg.media_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={msg.media_url} alt="" className="mb-1 max-h-72 max-w-full rounded-md object-contain" />
+                  )}
+                  {isSticker && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={msg.media_url ?? undefined} alt="" className="h-32 w-32 object-contain" />
+                  )}
+                  {msg.content && <p className="whitespace-pre-wrap break-words">{msg.content}</p>}
+                  <div
+                    className={cn(
+                      'mt-1 flex items-center justify-end gap-1 text-[10px]',
+                      isSticker ? 'text-muted-foreground' : 'opacity-70'
+                    )}
+                  >
+                    <span>{new Date(msg.created_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {msg.direction === 'outbound' && <MessageTicks status={msg.status} />}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
@@ -27,8 +28,16 @@ export function InboxShell({
   quickReplies: QuickReply[];
 }) {
   const supabase = createClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // El chat abierto vive en la URL (?c=<id>), no en un useState: así, entrar
+  // a "Inbox" desde el menú (que apunta a la URL sin ?c) cierra cualquier
+  // chat abierto solo, sin código especial para detectar el click.
+  const selectedId = searchParams.get('c');
+
   const [conversations, setConversations] = useState<Conversation[]>(sortConversations(initialConversations));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedFetched, setArchivedFetched] = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
@@ -36,6 +45,14 @@ export function InboxShell({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
   const [searching, setSearching] = useState(false);
+
+  function selectConversation(id: string | null) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (id) params.set('c', id);
+    else params.delete('c');
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   useEffect(() => {
     const channel = supabase
@@ -131,7 +148,7 @@ export function InboxShell({
   const selected = visibleConversations.find((c) => c.id === selectedId) ?? null;
 
   function handleSelect(id: string) {
-    setSelectedId(id);
+    selectConversation(id);
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)));
     supabase.from('conversations').update({ unread_count: 0 }).eq('id', id).then();
   }
@@ -139,7 +156,7 @@ export function InboxShell({
   async function handleToggleArchivedView() {
     const next = !showArchived;
     setShowArchived(next);
-    setSelectedId(null);
+    selectConversation(null);
 
     if (next && !archivedFetched) {
       setLoadingArchived(true);
@@ -182,8 +199,8 @@ export function InboxShell({
           <ChatWindow
             conversation={selected}
             quickReplies={quickReplies}
-            onConversationLeft={() => setSelectedId(null)}
-            onBack={() => setSelectedId(null)}
+            onConversationLeft={() => selectConversation(null)}
+            onBack={() => selectConversation(null)}
           />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
