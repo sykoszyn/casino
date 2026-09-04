@@ -32,7 +32,27 @@ export function LineCard({ instance }: { instance: WhatsappInstance }) {
     setLoading('delete');
     try {
       await whatsappBackend.remove(instance.id).catch(() => null);
+
+      // antes de borrar, anotamos qué contactos apuntan a esta línea: al
+      // borrar la línea las conversaciones se van en cascada, pero el
+      // contacto en sí queda huérfano (whatsapp_instance_id en null) en vez
+      // de borrarse solo.
+      const { data: candidates } = await supabase.from('contacts').select('id').eq('whatsapp_instance_id', instance.id);
+
       await supabase.from('whatsapp_instances').delete().eq('id', instance.id);
+
+      if (candidates?.length) {
+        const candidateIds = candidates.map((c) => c.id);
+        // de esos, borramos solo los que se quedaron sin ninguna conversación
+        // (si le escribieron también a otra línea de esta sucursal, ese
+        // contacto se queda).
+        const { data: stillLinked } = await supabase.from('conversations').select('contact_id').in('contact_id', candidateIds);
+        const stillLinkedIds = new Set((stillLinked ?? []).map((c) => c.contact_id));
+        const orphanIds = candidateIds.filter((id) => !stillLinkedIds.has(id));
+        if (orphanIds.length) {
+          await supabase.from('contacts').delete().in('id', orphanIds);
+        }
+      }
     } catch (e) {
       console.error(e);
     } finally {
