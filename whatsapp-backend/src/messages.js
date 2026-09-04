@@ -113,22 +113,28 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
 
     if (convError) throw convError;
 
-    const { error: msgError } = await supabase.from('messages').insert({
-      project_id: projectId,
-      conversation_id: conversation.id,
-      whatsapp_instance_id: instanceId,
-      wa_message_id: msg.key.id,
-      direction: fromMe ? 'outbound' : 'inbound',
-      sender_name: fromMe ? 'Nosotros' : pushName,
-      content: text,
-      message_type: type,
-      media_url: mediaUrl,
-      status: fromMe ? 'sent' : 'delivered',
-      raw: msg,
-      created_at: msg.messageTimestamp
-        ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
-        : new Date().toISOString(),
-    });
+    // upsert (no insert) + el unique constraint de (whatsapp_instance_id, wa_message_id):
+    // Baileys puede emitir el mismo mensaje más de una vez (eco de un mensaje
+    // propio, reintentos, sync), y así no queda duplicado en el chat.
+    const { error: msgError } = await supabase.from('messages').upsert(
+      {
+        project_id: projectId,
+        conversation_id: conversation.id,
+        whatsapp_instance_id: instanceId,
+        wa_message_id: msg.key.id,
+        direction: fromMe ? 'outbound' : 'inbound',
+        sender_name: fromMe ? 'Nosotros' : pushName,
+        content: text,
+        message_type: type,
+        media_url: mediaUrl,
+        status: fromMe ? 'sent' : 'delivered',
+        raw: msg,
+        created_at: msg.messageTimestamp
+          ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
+          : new Date().toISOString(),
+      },
+      { onConflict: 'whatsapp_instance_id,wa_message_id', ignoreDuplicates: true }
+    );
 
     if (msgError) throw msgError;
   } catch (err) {

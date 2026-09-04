@@ -166,7 +166,11 @@ async function startInstance(supabase, instance) {
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-      if (type !== 'notify') return;
+      // "notify" son mensajes nuevos entrantes; "append" es como Baileys nos
+      // hace eco de los mensajes que nosotros mismos mandamos con
+      // sock.sendMessage(). Procesamos los dos (handleIncomingMessage dedupea
+      // por wa_message_id), si no los que enviamos nunca se guardaban.
+      if (type !== 'notify' && type !== 'append') return;
       for (const msg of messages) {
         await handleIncomingMessage(supabase, sock, projectId, instanceId, msg);
       }

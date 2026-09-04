@@ -116,6 +116,24 @@ create table if not exists public.messages (
 create index if not exists idx_messages_conversation on public.messages(conversation_id, created_at);
 create index if not exists idx_messages_project on public.messages(project_id);
 
+-- El backend hace upsert por (whatsapp_instance_id, wa_message_id) para no
+-- duplicar un mensaje si Baileys lo emite más de una vez (eco de un mensaje
+-- propio, reintentos, sync inicial). NULLs no chocan entre sí, así que no
+-- afecta a filas viejas sin wa_message_id.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'messages_instance_wa_message_id_key'
+  ) then
+    begin
+      alter table public.messages
+        add constraint messages_instance_wa_message_id_key unique (whatsapp_instance_id, wa_message_id);
+    exception when unique_violation then
+      raise notice 'Hay wa_message_id duplicados en messages: no se pudo crear el unique constraint, revisar manualmente.';
+    end;
+  end if;
+end $$;
+
 -- ----------------------------------------------------------------------------
 -- Trigger genérico para mantener updated_at
 -- ----------------------------------------------------------------------------
