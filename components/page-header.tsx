@@ -1,6 +1,6 @@
 export function PageHeader({ title, description, action }: { title: string; description?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between border-b border-border px-6 py-4">
+    <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6">
       <div>
         <h1 className="text-lg font-semibold">{title}</h1>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}

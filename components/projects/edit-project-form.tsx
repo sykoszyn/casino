@@ -4,6 +4,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { slugify } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,17 +27,39 @@ export function EditProjectForm({ project }: { project: Project }) {
     setError(null);
     setSaved(false);
 
-    const { error } = await supabase
-      .from('projects')
-      .update({ name, description: description || null })
-      .eq('id', project.id);
+    const base = slugify(name) || project.slug;
+    let slug = base;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { error: updateError } = await supabase
+        .from('projects')
+        .update({ name, description: description || null, slug })
+        .eq('id', project.id);
+
+      if (!updateError) {
+        lastError = null;
+        break;
+      }
+      if (updateError.code === '23505') {
+        slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+        lastError = updateError;
+        continue;
+      }
+      lastError = updateError;
+      break;
+    }
 
     setSaving(false);
-    if (error) {
-      setError(error.message);
+    if (lastError) {
+      setError(lastError.message);
       return;
     }
+
     setSaved(true);
+    if (slug !== project.slug) {
+      router.push(`/${slug}/configuracion`);
+    }
     router.refresh();
   }
 
@@ -45,8 +68,8 @@ export function EditProjectForm({ project }: { project: Project }) {
       <CardHeader>
         <CardTitle>Datos de la sucursal</CardTitle>
         <CardDescription>
-          El link de la sucursal (<code className="rounded bg-secondary px-1 py-0.5">/{project.slug}</code>) no cambia al
-          renombrarla.
+          El link de la sucursal (<code className="rounded bg-secondary px-1 py-0.5">/{project.slug}</code>) se actualiza
+          solo cuando cambiás el nombre.
         </CardDescription>
       </CardHeader>
       <CardContent>

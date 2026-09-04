@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ContactPanel } from './contact-panel';
+import { cn } from '@/lib/utils';
 import type { Conversation, QuickReply } from '@/lib/types';
 import { MessagesSquare } from 'lucide-react';
 
@@ -27,10 +28,14 @@ export function InboxShell({
 }) {
   const supabase = createClient();
   const [conversations, setConversations] = useState<Conversation[]>(sortConversations(initialConversations));
-  const [selectedId, setSelectedId] = useState<string | null>(initialConversations[0]?.id ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archivedFetched, setArchivedFetched] = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Conversation[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     const channel = supabase
@@ -71,7 +76,58 @@ export function InboxShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  const visibleConversations = conversations.filter((c) => c.archived === showArchived);
+  // Búsqueda: por nombre/teléfono de contacto o por texto de cualquier
+  // mensaje, en TODAS las líneas de esta sucursal (todo está scopeado por
+  // project_id, no por línea individual).
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults(null);
+      setSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearching(true);
+    const timeout = setTimeout(async () => {
+      const like = `%${query}%`;
+
+      const [{ data: byContact }, { data: matchingMessages }] = await Promise.all([
+        supabase
+          .from('conversations')
+          .select('*, contact:contacts!inner(*)')
+          .eq('project_id', projectId)
+          .or(`name.ilike.${like},phone_number.ilike.${like}`, { foreignTable: 'contacts' })
+          .limit(50),
+        supabase.from('messages').select('conversation_id').eq('project_id', projectId).ilike('content', like).limit(50),
+      ]);
+
+      if (cancelled) return;
+
+      const convIdsFromMessages = [...new Set((matchingMessages ?? []).map((m) => m.conversation_id))].filter(
+        (id) => !(byContact ?? []).some((c) => c.id === id)
+      );
+
+      let byMessage: Conversation[] = [];
+      if (convIdsFromMessages.length) {
+        const { data } = await supabase.from('conversations').select('*, contact:contacts(*)').in('id', convIdsFromMessages);
+        byMessage = data ?? [];
+      }
+
+      if (cancelled) return;
+      setSearchResults(sortConversations([...(byContact ?? []), ...byMessage]));
+      setSearching(false);
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, projectId]);
+
+  const isSearching = searchResults !== null;
+  const visibleConversations = isSearching ? searchResults : conversations.filter((c) => c.archived === showArchived);
   const selected = visibleConversations.find((c) => c.id === selectedId) ?? null;
 
   function handleSelect(id: string) {
@@ -114,20 +170,34 @@ export function InboxShell({
         showArchived={showArchived}
         onToggleArchived={handleToggleArchivedView}
         loadingArchived={loadingArchived}
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        searching={searching}
+        isSearchResults={isSearching}
+        className={cn(selected && 'hidden md:flex')}
       />
 
-      <div className="flex-1">
+      <div className={cn('flex-1', !selected && 'hidden md:flex')}>
         {selected ? (
-          <ChatWindow conversation={selected} quickReplies={quickReplies} onArchivedChange={() => setSelectedId(null)} />
+          <ChatWindow
+            conversation={selected}
+            quickReplies={quickReplies}
+            onConversationLeft={() => setSelectedId(null)}
+            onBack={() => setSelectedId(null)}
+          />
         ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <MessagesSquare className="h-8 w-8" />
             <p className="text-sm">Elegí una conversación</p>
           </div>
         )}
       </div>
 
-      {selected && <ContactPanel conversation={selected} />}
+      {selected && (
+        <div className="hidden lg:flex">
+          <ContactPanel conversation={selected} />
+        </div>
+      )}
     </div>
   );
 }

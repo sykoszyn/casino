@@ -4,6 +4,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { slugify } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,15 +18,6 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Plus } from 'lucide-react';
-
-function slugify(name: string) {
-  return name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)/g, '');
-}
 
 export function CreateProjectDialog() {
   const router = useRouter();
@@ -41,8 +33,24 @@ export function CreateProjectDialog() {
     setLoading(true);
     setError(null);
 
-    const slug = slugify(name) || crypto.randomUUID().slice(0, 8);
-    const { error } = await supabase.from('projects').insert({ name, slug, description: description || null });
+    const base = slugify(name) || 'sucursal';
+    let slug = base;
+    let error = null;
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { error: insertError } = await supabase.from('projects').insert({ name, slug, description: description || null });
+      if (!insertError) {
+        error = null;
+        break;
+      }
+      if (insertError.code === '23505') {
+        slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
+        error = insertError;
+        continue;
+      }
+      error = insertError;
+      break;
+    }
 
     setLoading(false);
     if (error) {

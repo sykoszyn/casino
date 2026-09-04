@@ -73,7 +73,10 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
 
     const fromMe = !!msg.key.fromMe;
     const { text, type, mimetype } = extractContent(msg);
-    const pushName = msg.pushName || null;
+    // pushName es el nombre que el contacto tiene puesto en su WhatsApp; si el
+    // mensaje no lo trae (pasa alguna vez en el primer mensaje de un chat
+    // nuevo), probamos con el nombre de negocio verificado como respaldo.
+    const pushName = msg.pushName || msg.verifiedBizName || null;
 
     let mediaUrl = null;
     if (MEDIA_TYPES.has(type)) {

@@ -32,10 +32,13 @@ export function Sidebar({
   project,
   projects,
   userEmail,
+  onNavigate,
 }: {
   project: Project;
   projects: Project[];
   userEmail: string;
+  /** se llama al hacer clic en un link del menú (cierra el drawer en mobile) */
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
 
@@ -44,16 +47,17 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-screen w-60 shrink-0 flex-col border-r border-border bg-[#171717]">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-[#171717] md:w-60">
       <div className="p-3">
         <ProjectSwitcher current={project} projects={projects} />
       </div>
 
-      <nav className="flex-1 space-y-0.5 px-3">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3">
         {mainNav.map((item) => (
           <Link
             key={item.href}
             href={`/${project.slug}/${item.href}`}
+            onClick={onNavigate}
             className={cn(
               'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
               isActive(item.href) && 'bg-accent text-foreground'
@@ -69,6 +73,7 @@ export function Sidebar({
           <Link
             key={item.href}
             href={`/${project.slug}/${item.href}`}
+            onClick={onNavigate}
             className={cn(
               'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
               isActive(item.href) && 'bg-accent text-foreground'

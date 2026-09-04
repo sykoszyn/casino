@@ -2,7 +2,7 @@ import type React from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getProjectBySlug } from '@/lib/data/get-project';
-import { Sidebar } from '@/components/sidebar';
+import { ResponsiveShell } from '@/components/responsive-shell';
 
 export default async function ProjectLayout({
   children,
@@ -29,9 +29,8 @@ export default async function ProjectLayout({
   if (!project) notFound();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar project={project} projects={projects ?? []} userEmail={session.user.email ?? ''} />
-      <div className="flex-1 overflow-y-auto">{children}</div>
-    </div>
+    <ResponsiveShell project={project} projects={projects ?? []} userEmail={session.user.email ?? ''}>
+      {children}
+    </ResponsiveShell>
   );
 }
