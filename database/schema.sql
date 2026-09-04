@@ -328,6 +328,11 @@ join (values
   ('5491126208331@s.whatsapp.net', 'Felicidades premio abonado!', interval '25 minutes', 0)
 ) as m(wa_id, preview, age, unread)
   on ct.wa_id = m.wa_id
+-- si borraste la línea demo desde la UI, el contacto de prueba queda con
+-- whatsapp_instance_id en null (ON DELETE SET NULL); lo salteamos en vez
+-- de romper, en lugar de asumir que el seed corre siempre sobre una base
+-- recién creada.
+where ct.whatsapp_instance_id is not null
 on conflict (whatsapp_instance_id, contact_id) do nothing;
 
 insert into public.messages (project_id, conversation_id, whatsapp_instance_id, direction, sender_name, content, message_type, status, created_at)
