@@ -78,21 +78,23 @@ export function ConversationList({
         ) : (
           conversations.map((conv) => {
             const label = conv.contact?.name || conv.contact?.phone_number || 'Desconocido';
+            const unread = conv.unread_count > 0;
             return (
               <button
                 key={conv.id}
                 onClick={() => onSelect(conv.id)}
                 className={cn(
                   'flex w-full items-start gap-2.5 border-b border-border/60 px-4 py-3 text-left transition-colors hover:bg-accent/60',
-                  selectedId === conv.id && 'bg-accent'
+                  selectedId === conv.id && 'bg-accent',
+                  unread && 'bg-success/[0.06]'
                 )}
               >
-                <Avatar className="h-9 w-9 shrink-0">
+                <Avatar className={cn('h-9 w-9 shrink-0', unread && 'ring-2 ring-success ring-offset-1 ring-offset-background')}>
                   <AvatarFallback>{label.slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">{label}</p>
+                    <p className={cn('truncate text-sm', unread ? 'font-semibold text-foreground' : 'font-medium')}>{label}</p>
                     <div className="flex shrink-0 items-center gap-1">
                       {conv.archived && (
                         <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
@@ -104,10 +106,12 @@ export function ConversationList({
                       </Badge>
                     </div>
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">{conv.last_message_preview || 'Sin mensajes'}</p>
+                  <p className={cn('truncate text-xs', unread ? 'font-medium text-foreground' : 'text-muted-foreground')}>
+                    {conv.last_message_preview || 'Sin mensajes'}
+                  </p>
                 </div>
-                {conv.unread_count > 0 && (
-                  <span className="mt-1 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+                {unread && (
+                  <span className="mt-1 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-success px-1 text-[10px] font-bold text-success-foreground">
                     {conv.unread_count}
                   </span>
                 )}
