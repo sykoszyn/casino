@@ -142,18 +142,43 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
   }
 }
 
-/** Actualiza el estado (sent/delivered/read) de un mensaje ya guardado según las confirmaciones de WhatsApp. */
-async function updateMessageStatus(supabase, instanceId, waMessageId, waStatus) {
+const STATUS_RANK = { pending: 0, sent: 1, delivered: 2, read: 3, failed: -1 };
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Actualiza el estado (sent/delivered/read) de un mensaje ya guardado según
+ * las confirmaciones de WhatsApp. La confirmación puede llegar unos
+ * milisegundos antes de que termine de guardarse el mensaje (todavía se está
+ * subiendo el contacto/conversación), así que reintenta una vez corto antes
+ * de rendirse.
+ */
+async function updateMessageStatus(supabase, instanceId, waMessageId, waStatus, attempt = 0) {
   const status = WA_STATUS_MAP[waStatus];
   if (!status || !waMessageId) return;
 
-  await supabase
+  const { data: existing, error } = await supabase
     .from('messages')
-    .update({ status })
+    .select('id, status')
     .eq('whatsapp_instance_id', instanceId)
     .eq('wa_message_id', waMessageId)
-    // nunca "retroceder" un estado (ej: no pisar "read" con un "delivered" que llegó tarde)
-    .not('status', 'in', status === 'read' ? '()' : '(read)');
+    .maybeSingle();
+
+  if (error) throw error;
+
+  if (!existing) {
+    if (attempt < 3) {
+      await sleep(500);
+      return updateMessageStatus(supabase, instanceId, waMessageId, waStatus, attempt + 1);
+    }
+    return;
+  }
+
+  // nunca "retroceder" un estado (ej: no pisar "read" con un "delivered" que llegó después)
+  if (STATUS_RANK[status] <= STATUS_RANK[existing.status]) return;
+
+  const { error: updateError } = await supabase.from('messages').update({ status }).eq('id', existing.id);
+  if (updateError) throw updateError;
 }
 
 module.exports = { handleIncomingMessage, updateMessageStatus };

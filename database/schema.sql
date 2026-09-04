@@ -304,65 +304,13 @@ create policy "authenticated_delete_media" on storage.objects
   using (bucket_id = 'media');
 
 -- ----------------------------------------------------------------------------
--- 9. SEED DATA — datos de prueba realistas
+-- 9. (sin seed data)
+--
+-- La versión inicial de este archivo insertaba proyectos/líneas/contactos de
+-- prueba (iPhonixAr, Joker Ganamos). Se sacó a propósito: la app ya se usa en
+-- producción y la creación de proyectos/líneas se hace desde la UI, así que
+-- mantener un seed acá solo generaba el riesgo de resucitar líneas falsas
+-- cada vez que se vuelve a correr este script. Si en algún momento se borró
+-- esa data de prueba manualmente, no hace falta hacer nada más: no se vuelve
+-- a crear sola.
 -- ----------------------------------------------------------------------------
-insert into public.projects (name, slug, description, status)
-values
-  ('iPhonixAr', 'iphonixar', 'Venta y reparación de iPhones — atención por WhatsApp/IG', 'active'),
-  ('Joker Ganamos', 'joker-ganamos', 'Casa de apuestas online — carga de fichas y soporte', 'active')
-on conflict (slug) do nothing;
-
-insert into public.whatsapp_instances (project_id, name, phone_number, connection_type, status, last_connected_at)
-select p.id, v.name, v.phone_number, v.connection_type, v.status,
-       case when v.status = 'connected' then now() - interval '2 hours' else null end
-from public.projects p
-join (values
-  ('iphonixar', 'Ventas iPhonixAr', '5491122334455', 'qr', 'connected'),
-  ('iphonixar', 'Soporte técnico', '5491122334466', 'qr', 'qr_pending'),
-  ('joker-ganamos', '3000 común con publi', '5491125820443', 'pairing_code', 'connected'),
-  ('joker-ganamos', 'Buss 35 con publi', '5491125822821', 'qr', 'error')
-) as v(slug, name, phone_number, connection_type, status)
-  on p.slug = v.slug
-on conflict do nothing;
-
-insert into public.contacts (project_id, whatsapp_instance_id, wa_id, name, phone_number)
-select wi.project_id, wi.id, c.wa_id, c.name, c.phone_number
-from public.whatsapp_instances wi
-join public.projects p on p.id = wi.project_id
-join (values
-  ('iphonixar', 'Ventas iPhonixAr', '5491133445566@s.whatsapp.net', 'Gustavo', '5491133445566'),
-  ('joker-ganamos', '3000 común con publi', '5491126208330@s.whatsapp.net', 'ivan2308z R', '5491126208330'),
-  ('joker-ganamos', '3000 común con publi', '5491126208331@s.whatsapp.net', 'Abel0309z J', '5491126208331')
-) as c(slug, instance_name, wa_id, name, phone_number)
-  on p.slug = c.slug and wi.name = c.instance_name
-on conflict (project_id, wa_id) do nothing;
-
-insert into public.conversations (project_id, whatsapp_instance_id, contact_id, channel, last_message_preview, last_message_at, unread_count)
-select ct.project_id, ct.whatsapp_instance_id, ct.id, 'wa', m.preview, now() - m.age, m.unread
-from public.contacts ct
-join (values
-  ('5491133445566@s.whatsapp.net', 'Hola, quiero cotizar un iPhone 13', interval '10 minutes', 1),
-  ('5491126208330@s.whatsapp.net', 'Gracias!', interval '3 minutes', 0),
-  ('5491126208331@s.whatsapp.net', 'Felicidades premio abonado!', interval '25 minutes', 0)
-) as m(wa_id, preview, age, unread)
-  on ct.wa_id = m.wa_id
--- si borraste la línea demo desde la UI, el contacto de prueba queda con
--- whatsapp_instance_id en null (ON DELETE SET NULL); lo salteamos en vez
--- de romper, en lugar de asumir que el seed corre siempre sobre una base
--- recién creada.
-where ct.whatsapp_instance_id is not null
-on conflict (whatsapp_instance_id, contact_id) do nothing;
-
-insert into public.messages (project_id, conversation_id, whatsapp_instance_id, direction, sender_name, content, message_type, status, created_at)
-select c.project_id, c.id, c.whatsapp_instance_id, m.direction, m.sender_name, m.content, 'text', 'delivered', now() - m.age
-from public.conversations c
-join public.contacts ct on ct.id = c.contact_id
-join (values
-  ('5491133445566@s.whatsapp.net', 'inbound',  'Gustavo',     'Hola, quiero cotizar un iPhone 13', interval '10 minutes'),
-  ('5491126208330@s.whatsapp.net', 'inbound',  'ivan2308z R', 'Ya hice el depósito', interval '5 minutes'),
-  ('5491126208330@s.whatsapp.net', 'outbound', 'Bot',         'Perfecto, en breve acreditamos', interval '4 minutes'),
-  ('5491126208330@s.whatsapp.net', 'inbound',  'ivan2308z R', 'Gracias!', interval '3 minutes'),
-  ('5491126208331@s.whatsapp.net', 'inbound',  'Abel0309z J', 'Felicidades premio abonado!', interval '25 minutes')
-) as m(wa_id, direction, sender_name, content, age)
-  on ct.wa_id = m.wa_id
-order by m.age desc;

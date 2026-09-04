@@ -8,12 +8,15 @@ export default async function InboxPage({ params }: { params: { slug: string } }
   const project = await getProjectBySlug(params.slug);
   if (!project) return null;
 
+  // Con muchas líneas puede haber cientos de conversaciones; solo traemos las
+  // más recientes de entrada (el resto se puede sumar después con "cargar más").
   const { data: conversations } = await supabase
     .from('conversations')
     .select('*, contact:contacts(*)')
     .eq('project_id', project.id)
     .eq('archived', false)
-    .order('last_message_at', { ascending: false, nullsFirst: false });
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .limit(150);
 
   return (
     <div className="flex h-full flex-col">

@@ -39,14 +39,17 @@ export function ChatWindow({ conversation }: { conversation: Conversation }) {
   useEffect(() => {
     let active = true;
     setLoadingHistory(true);
+    // Traemos los últimos 80 mensajes (descendente) y los damos vuelta, así
+    // no se carga el historial completo de conversaciones muy largas.
     supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversation.id)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
+      .limit(80)
       .then(({ data }) => {
         if (active) {
-          setMessages(data ?? []);
+          setMessages((data ?? []).slice().reverse());
           setLoadingHistory(false);
         }
       });

@@ -1,14 +1,19 @@
+import { getProjectBySlug } from '@/lib/data/get-project';
 import { PageHeader } from '@/components/page-header';
+import { EditProjectForm } from '@/components/projects/edit-project-form';
 
-export default function ConfiguracionPage({ params }: { params: { slug: string } }) {
+export default async function ConfiguracionPage({ params }: { params: { slug: string } }) {
+  const project = await getProjectBySlug(params.slug);
+  if (!project) return null;
+
   return (
     <div>
-      <PageHeader title="Configuración" description="Ajustes del proyecto" />
-      <div className="m-6 max-w-lg space-y-2 text-sm text-muted-foreground">
-        <p>
-          Slug del proyecto: <code className="rounded bg-secondary px-1.5 py-0.5 text-foreground">{params.slug}</code>
+      <PageHeader title="Configuración" description="Ajustes de la sucursal" />
+      <div className="m-6 space-y-6">
+        <EditProjectForm project={project} />
+        <p className="max-w-lg text-sm text-muted-foreground">
+          Próximamente: miembros del equipo, webhooks salientes y respuestas automáticas.
         </p>
-        <p>Próximamente: miembros del equipo, webhooks salientes y respuestas automáticas.</p>
       </div>
     </div>
   );
