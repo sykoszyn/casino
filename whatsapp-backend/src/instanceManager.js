@@ -18,7 +18,7 @@ const starting = new Map();
 /** instanceId -> cantidad de reconexiones fallidas seguidas (se resetea al abrir bien) */
 const reconnectAttempts = new Map();
 
-const MAX_RECONNECT_ATTEMPTS = 6;
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 // Motivos de desconexión que Baileys resuelve solo reconectando: no son errores
 // reales, así que no hay que mostrarlos como "Error" en la UI.
@@ -130,7 +130,8 @@ async function startInstance(supabase, instance) {
             .update({
               status: 'error',
               qr_code: null,
-              error_message: 'No se pudo reconectar tras varios intentos. Probá desconectar y crear la línea de nuevo.',
+              error_message:
+                'No se pudo reconectar tras varios intentos. Probá el botón "Reconectar" (no pierde la sesión); si eso tampoco funciona después de un rato, recién ahí eliminá la línea y volvé a crearla.',
             })
             .eq('id', instanceId);
           reconnectAttempts.delete(instanceId);
@@ -152,7 +153,7 @@ async function startInstance(supabase, instance) {
             .eq('id', instanceId);
         }
 
-        const delay = isExpectedRestart ? 300 : Math.min(1000 * 2 ** (attempts - 1), 20000);
+        const delay = isExpectedRestart ? 300 : Math.min(1000 * 2 ** (attempts - 1), 30000);
         console.warn(`[instance ${instanceId}] reconectando en ${delay}ms (intento ${attempts})`);
         setTimeout(() => {
           supabase

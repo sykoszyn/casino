@@ -21,6 +21,8 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
@@ -159,9 +161,14 @@ async function resumeActiveInstances() {
     return;
   }
 
+  // Escalonado a propósito: si arrancan las 50 conexiones en el mismo
+  // instante (típico después de un redeploy), WhatsApp puede tratarlo como
+  // actividad sospechosa y frenar algunas. Con un respiro entre cada una se
+  // reduce bastante esa chance.
   for (const instance of data) {
     console.log(`Reanudando instancia ${instance.name} (${instance.id})...`);
     startInstance(supabase, instance).catch((e) => console.error(`Error reanudando ${instance.id}:`, e.message));
+    await sleep(400);
   }
 }
 
