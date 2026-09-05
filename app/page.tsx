@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { CreateProjectDialog } from '@/components/projects/create-project-dialog';
 import { ProjectCard } from '@/components/projects/project-card';
 import { UserMenu } from '@/components/user-menu';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { Waypoints } from 'lucide-react';
 import type { Project } from '@/lib/types';
 
@@ -31,7 +32,10 @@ export default async function ProjectsPage() {
           <Waypoints className="h-5 w-5 text-primary" />
           NexoWA
         </div>
-        <UserMenu email={user.email ?? ''} />
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <UserMenu email={user.email ?? ''} />
+        </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-10">

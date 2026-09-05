@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { ProjectSwitcher } from '@/components/project-switcher';
+import { ThemeToggle } from '@/components/theme-toggle';
 import type { Project } from '@/lib/types';
 import {
   LayoutDashboard,
@@ -47,7 +48,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-[#171717] md:w-60">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar md:w-60">
       <div className="p-3">
         <ProjectSwitcher current={project} projects={projects} />
       </div>
@@ -86,13 +87,14 @@ export function Sidebar({
       </nav>
 
       <div className="flex items-center gap-2 border-t border-border p-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
           {userEmail.slice(0, 2).toUpperCase()}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{userEmail}</p>
           <p className="text-xs text-muted-foreground">Owner</p>
         </div>
+        <ThemeToggle className="h-8 w-8 shrink-0" />
       </div>
     </aside>
   );
