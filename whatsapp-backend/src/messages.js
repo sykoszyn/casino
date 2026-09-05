@@ -81,14 +81,25 @@ async function resolveChatIdentity(supabase, msg) {
     return { jid: rawJid, phoneNumber: rawJid.split('@')[0], isGroup: false };
   }
 
+  // Todo lo que toca lid_mappings va en su propio try/catch: es una mejora
+  // sobre el caso @lid, no puede tumbar el guardado del mensaje si esa tabla
+  // todavía no existe (falta correr el schema.sql) o falla por lo que sea.
   if (msg.key.senderPn) {
-    await supabase.from('lid_mappings').upsert({ lid: rawJid, phone_jid: msg.key.senderPn }, { onConflict: 'lid' });
+    try {
+      await supabase.from('lid_mappings').upsert({ lid: rawJid, phone_jid: msg.key.senderPn }, { onConflict: 'lid' });
+    } catch (err) {
+      console.error('[messages] no se pudo guardar el mapeo de LID (¿falta correr schema.sql?):', err.message);
+    }
     return { jid: msg.key.senderPn, phoneNumber: msg.key.senderPn.split('@')[0], isGroup: false };
   }
 
-  const { data: mapping } = await supabase.from('lid_mappings').select('phone_jid').eq('lid', rawJid).maybeSingle();
-  if (mapping?.phone_jid) {
-    return { jid: mapping.phone_jid, phoneNumber: mapping.phone_jid.split('@')[0], isGroup: false };
+  try {
+    const { data: mapping } = await supabase.from('lid_mappings').select('phone_jid').eq('lid', rawJid).maybeSingle();
+    if (mapping?.phone_jid) {
+      return { jid: mapping.phone_jid, phoneNumber: mapping.phone_jid.split('@')[0], isGroup: false };
+    }
+  } catch (err) {
+    console.error('[messages] no se pudo leer el mapeo de LID (¿falta correr schema.sql?):', err.message);
   }
 
   // todavía no sabemos el número real de este LID: lo usamos tal cual: si
