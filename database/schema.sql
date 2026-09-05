@@ -165,6 +165,22 @@ create policy "authenticated_all_quick_replies" on public.quick_replies
   with check (true);
 
 -- ----------------------------------------------------------------------------
+-- 5.2 LID_MAPPINGS (WhatsApp identifica a algunos contactos por un ID
+-- alternativo -"LID"- en vez del número real). Guardamos la relación la
+-- primera vez que un mensaje trae el número real, para no volver a crear un
+-- contacto duplicado si un mensaje posterior del mismo LID no lo trae.
+-- Solo la usa el backend (service_role); no hace falta que la vea nadie
+-- desde la app, por eso no tiene policies de "authenticated".
+-- ----------------------------------------------------------------------------
+create table if not exists public.lid_mappings (
+  lid        text primary key,
+  phone_jid  text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.lid_mappings enable row level security;
+
+-- ----------------------------------------------------------------------------
 -- Trigger genérico para mantener updated_at
 -- ----------------------------------------------------------------------------
 create or replace function public.set_updated_at()

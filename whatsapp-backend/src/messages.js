@@ -62,11 +62,14 @@ async function getGroupName(sock, jid) {
  * WhatsApp identifica a algunos contactos con un "LID" (identificador
  * alternativo, ligado a privacidad) en vez del número de teléfono real, así
  * que remoteJid puede terminar en "@lid" en vez de "@s.whatsapp.net". Cuando
- * pasa eso, Baileys igual manda el número real en key.senderPn — sin esto,
- * el contacto queda guardado con un ID interno sin sentido en vez del
- * teléfono de la persona.
+ * pasa eso, Baileys manda el número real en key.senderPn — pero no todos los
+ * mensajes de ese mismo LID lo traen. Si resolviéramos "a veces sí, a veces
+ * no", el mismo contacto terminaría con dos wa_id distintos → dos contactos
+ * y dos chats duplicados para la misma persona. Por eso la primera vez que
+ * aparece el número real lo guardamos en lid_mappings, y de ahí en más
+ * siempre usamos ese mismo número para ese LID, lo traiga o no el mensaje.
  */
-function resolveChatIdentity(msg) {
+async function resolveChatIdentity(supabase, msg) {
   const rawJid = msg.key.remoteJid;
   const isGroup = rawJid.endsWith('@g.us');
 
@@ -74,8 +77,24 @@ function resolveChatIdentity(msg) {
     return { jid: rawJid, phoneNumber: null, isGroup: true };
   }
 
-  const jid = rawJid.endsWith('@lid') && msg.key.senderPn ? msg.key.senderPn : rawJid;
-  return { jid, phoneNumber: jid.split('@')[0], isGroup: false };
+  if (!rawJid.endsWith('@lid')) {
+    return { jid: rawJid, phoneNumber: rawJid.split('@')[0], isGroup: false };
+  }
+
+  if (msg.key.senderPn) {
+    await supabase.from('lid_mappings').upsert({ lid: rawJid, phone_jid: msg.key.senderPn }, { onConflict: 'lid' });
+    return { jid: msg.key.senderPn, phoneNumber: msg.key.senderPn.split('@')[0], isGroup: false };
+  }
+
+  const { data: mapping } = await supabase.from('lid_mappings').select('phone_jid').eq('lid', rawJid).maybeSingle();
+  if (mapping?.phone_jid) {
+    return { jid: mapping.phone_jid, phoneNumber: mapping.phone_jid.split('@')[0], isGroup: false };
+  }
+
+  // todavía no sabemos el número real de este LID: lo usamos tal cual: si
+  // más adelante aparece el número real, ese mensaje empieza a usarlo y
+  // este contacto queda vinculado a partir de ese momento.
+  return { jid: rawJid, phoneNumber: rawJid.split('@')[0], isGroup: false };
 }
 
 async function uploadMedia(supabase, sock, msg, projectId, instanceId, type, mimetype) {
@@ -106,7 +125,7 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
     const rawJid = msg.key.remoteJid;
     if (!rawJid || rawJid === 'status@broadcast') return;
 
-    const { jid, phoneNumber, isGroup } = resolveChatIdentity(msg);
+    const { jid, phoneNumber, isGroup } = await resolveChatIdentity(supabase, msg);
 
     const fromMe = !!msg.key.fromMe;
     const { text, type, mimetype } = extractContent(msg);
