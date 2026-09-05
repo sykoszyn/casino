@@ -7,7 +7,7 @@ import { ConversationList } from './conversation-list';
 import { ChatWindow } from './chat-window';
 import { ContactPanel } from './contact-panel';
 import { cn } from '@/lib/utils';
-import type { Conversation, QuickReply } from '@/lib/types';
+import type { Conversation, QuickReply, WhatsappInstance } from '@/lib/types';
 import { MessagesSquare } from 'lucide-react';
 
 function sortConversations(list: Conversation[]) {
@@ -22,10 +22,12 @@ export function InboxShell({
   projectId,
   initialConversations,
   quickReplies,
+  instances: initialInstances,
 }: {
   projectId: string;
   initialConversations: Conversation[];
   quickReplies: QuickReply[];
+  instances: WhatsappInstance[];
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -38,6 +40,8 @@ export function InboxShell({
   const selectedId = searchParams.get('c');
 
   const [conversations, setConversations] = useState<Conversation[]>(sortConversations(initialConversations));
+  const [instances, setInstances] = useState<WhatsappInstance[]>(initialInstances);
+  const [selectedInstanceId, setSelectedInstanceId] = useState<string | 'all'>('all');
   const [showArchived, setShowArchived] = useState(false);
   const [archivedFetched, setArchivedFetched] = useState(false);
   const [loadingArchived, setLoadingArchived] = useState(false);
@@ -71,7 +75,8 @@ export function InboxShell({
 
           setConversations((prev) => {
             const exists = prev.find((c) => c.id === row.id);
-            const merged: Conversation = { ...row, contact: exists?.contact };
+            const instance = exists?.instance ?? instances.find((i) => i.id === row.whatsapp_instance_id);
+            const merged: Conversation = { ...row, contact: exists?.contact, instance };
             const next = exists ? prev.map((c) => (c.id === row.id ? merged : c)) : [merged, ...prev];
             return sortConversations(next);
           });
@@ -83,6 +88,31 @@ export function InboxShell({
               setConversations((prev) => sortConversations(prev.map((c) => (c.id === row.id ? { ...c, contact } : c))));
             }
           }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // Mantiene vivo el color del puntito de cada línea en los filtros de arriba.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`inbox-instances-${projectId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_instances', filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const row = payload.old as WhatsappInstance;
+            setInstances((prev) => prev.filter((i) => i.id !== row.id));
+            return;
+          }
+          const row = payload.new as WhatsappInstance;
+          setInstances((prev) => (prev.some((i) => i.id === row.id) ? prev.map((i) => (i.id === row.id ? row : i)) : [...prev, row]));
         }
       )
       .subscribe();
@@ -108,11 +138,12 @@ export function InboxShell({
     setSearching(true);
     const timeout = setTimeout(async () => {
       const like = `%${query}%`;
+      const embed = '*, contact:contacts(*), instance:whatsapp_instances(id, name, status)';
 
       const [{ data: byContact }, { data: matchingMessages }] = await Promise.all([
         supabase
           .from('conversations')
-          .select('*, contact:contacts!inner(*)')
+          .select(`*, contact:contacts!inner(*), instance:whatsapp_instances(id, name, status)`)
           .eq('project_id', projectId)
           .or(`name.ilike.${like},phone_number.ilike.${like}`, { foreignTable: 'contacts' })
           .limit(50),
@@ -127,8 +158,8 @@ export function InboxShell({
 
       let byMessage: Conversation[] = [];
       if (convIdsFromMessages.length) {
-        const { data } = await supabase.from('conversations').select('*, contact:contacts(*)').in('id', convIdsFromMessages);
-        byMessage = data ?? [];
+        const { data } = await supabase.from('conversations').select(embed).in('id', convIdsFromMessages);
+        byMessage = (data ?? []) as unknown as Conversation[];
       }
 
       if (cancelled) return;
@@ -144,7 +175,8 @@ export function InboxShell({
   }, [searchQuery, projectId]);
 
   const isSearching = searchResults !== null;
-  const visibleConversations = isSearching ? searchResults : conversations.filter((c) => c.archived === showArchived);
+  const byArchived = isSearching ? searchResults : conversations.filter((c) => c.archived === showArchived);
+  const visibleConversations = selectedInstanceId === 'all' ? byArchived : byArchived.filter((c) => c.whatsapp_instance_id === selectedInstanceId);
   const selected = visibleConversations.find((c) => c.id === selectedId) ?? null;
 
   function handleSelect(id: string) {
@@ -162,7 +194,7 @@ export function InboxShell({
       setLoadingArchived(true);
       const { data } = await supabase
         .from('conversations')
-        .select('*, contact:contacts(*)')
+        .select('*, contact:contacts(*), instance:whatsapp_instances(id, name, status)')
         .eq('project_id', projectId)
         .eq('archived', true)
         .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -191,6 +223,9 @@ export function InboxShell({
         onSearchQueryChange={setSearchQuery}
         searching={searching}
         isSearchResults={isSearching}
+        instances={instances}
+        selectedInstanceId={selectedInstanceId}
+        onSelectInstance={setSelectedInstanceId}
         className={cn(selected && 'hidden md:flex')}
       />
 

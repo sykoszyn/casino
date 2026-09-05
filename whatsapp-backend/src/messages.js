@@ -43,6 +43,41 @@ function extractContent(msg) {
 
 const MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker']);
 
+const groupNameCache = new Map();
+
+async function getGroupName(sock, jid) {
+  if (groupNameCache.has(jid)) return groupNameCache.get(jid);
+  try {
+    const meta = await sock.groupMetadata(jid);
+    const name = meta?.subject || null;
+    groupNameCache.set(jid, name);
+    return name;
+  } catch (err) {
+    console.error(`[messages] no se pudo leer el nombre del grupo ${jid}:`, err.message);
+    return null;
+  }
+}
+
+/**
+ * WhatsApp identifica a algunos contactos con un "LID" (identificador
+ * alternativo, ligado a privacidad) en vez del número de teléfono real, así
+ * que remoteJid puede terminar en "@lid" en vez de "@s.whatsapp.net". Cuando
+ * pasa eso, Baileys igual manda el número real en key.senderPn — sin esto,
+ * el contacto queda guardado con un ID interno sin sentido en vez del
+ * teléfono de la persona.
+ */
+function resolveChatIdentity(msg) {
+  const rawJid = msg.key.remoteJid;
+  const isGroup = rawJid.endsWith('@g.us');
+
+  if (isGroup) {
+    return { jid: rawJid, phoneNumber: null, isGroup: true };
+  }
+
+  const jid = rawJid.endsWith('@lid') && msg.key.senderPn ? msg.key.senderPn : rawJid;
+  return { jid, phoneNumber: jid.split('@')[0], isGroup: false };
+}
+
 async function uploadMedia(supabase, sock, msg, projectId, instanceId, type, mimetype) {
   try {
     const buffer = await downloadMediaMessage(msg, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
@@ -68,15 +103,18 @@ async function uploadMedia(supabase, sock, msg, projectId, instanceId, type, mim
 
 async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg) {
   try {
-    const jid = msg.key.remoteJid;
-    if (!jid || jid === 'status@broadcast') return;
+    const rawJid = msg.key.remoteJid;
+    if (!rawJid || rawJid === 'status@broadcast') return;
+
+    const { jid, phoneNumber, isGroup } = resolveChatIdentity(msg);
 
     const fromMe = !!msg.key.fromMe;
     const { text, type, mimetype } = extractContent(msg);
-    // pushName es el nombre que el contacto tiene puesto en su WhatsApp; si el
-    // mensaje no lo trae (pasa alguna vez en el primer mensaje de un chat
-    // nuevo), probamos con el nombre de negocio verificado como respaldo.
+    // pushName es el nombre que la persona tiene puesto en su WhatsApp (o,
+    // dentro de un grupo, quien mandó el mensaje puntual); si el mensaje no
+    // lo trae, probamos con el nombre de negocio verificado como respaldo.
     const pushName = msg.pushName || msg.verifiedBizName || null;
+    const contactName = isGroup ? await getGroupName(sock, jid) : pushName;
 
     let mediaUrl = null;
     if (MEDIA_TYPES.has(type)) {
@@ -101,8 +139,8 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
         .from('contacts')
         .update({
           whatsapp_instance_id: instanceId,
-          phone_number: jid.split('@')[0],
-          name: existingContact.name ?? pushName,
+          phone_number: phoneNumber,
+          name: existingContact.name ?? contactName,
         })
         .eq('id', existingContact.id)
         .select('id')
@@ -116,8 +154,8 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
           project_id: projectId,
           whatsapp_instance_id: instanceId,
           wa_id: jid,
-          name: pushName,
-          phone_number: jid.split('@')[0],
+          name: contactName,
+          phone_number: phoneNumber,
         })
         .select('id')
         .single();

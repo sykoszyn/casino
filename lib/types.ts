@@ -59,6 +59,7 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   contact?: Contact;
+  instance?: Pick<WhatsappInstance, 'id' | 'name' | 'status'>;
 }
 
 export type MessageDirection = 'inbound' | 'outbound';

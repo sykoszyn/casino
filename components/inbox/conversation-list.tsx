@@ -5,10 +5,22 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import type { Conversation } from '@/lib/types';
-import { Loader2, Search, X } from 'lucide-react';
+import type { Conversation, InstanceStatus, WhatsappInstance } from '@/lib/types';
+import { Loader2, Search, Users, X } from 'lucide-react';
 
 const channelLabel: Record<Conversation['channel'], string> = { wa: 'wa', ig: 'ig', fb: 'fb' };
+
+const STATUS_DOT: Record<InstanceStatus, string> = {
+  connected: 'bg-success',
+  disconnected: 'bg-muted-foreground',
+  error: 'bg-destructive',
+  connecting: 'bg-amber-500',
+  qr_pending: 'bg-amber-500',
+};
+
+function isGroupJid(waId: string | undefined) {
+  return !!waId?.endsWith('@g.us');
+}
 
 export function ConversationList({
   conversations,
@@ -21,6 +33,9 @@ export function ConversationList({
   onSearchQueryChange,
   searching,
   isSearchResults,
+  instances,
+  selectedInstanceId,
+  onSelectInstance,
   className,
 }: {
   conversations: Conversation[];
@@ -33,6 +48,9 @@ export function ConversationList({
   onSearchQueryChange: (value: string) => void;
   searching: boolean;
   isSearchResults: boolean;
+  instances: WhatsappInstance[];
+  selectedInstanceId: string | 'all';
+  onSelectInstance: (id: string | 'all') => void;
   className?: string;
 }) {
   return (
@@ -47,6 +65,35 @@ export function ConversationList({
           {loadingArchived ? 'Cargando...' : showArchived ? 'Ver activas' : 'Ver archivadas'}
         </button>
       </div>
+
+      {instances.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto border-b border-border px-3 py-2">
+          <button
+            onClick={() => onSelectInstance('all')}
+            className={cn(
+              'shrink-0 rounded-full border px-2.5 py-1 text-xs transition-colors',
+              selectedInstanceId === 'all' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
+            )}
+          >
+            Todas
+          </button>
+          {instances.map((instance) => (
+            <button
+              key={instance.id}
+              onClick={() => onSelectInstance(instance.id)}
+              className={cn(
+                'flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors',
+                selectedInstanceId === instance.id
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              )}
+            >
+              <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', STATUS_DOT[instance.status])} />
+              <span className="max-w-[10ch] truncate">{instance.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="relative border-b border-border p-2">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -79,6 +126,7 @@ export function ConversationList({
           conversations.map((conv) => {
             const label = conv.contact?.name || conv.contact?.phone_number || 'Desconocido';
             const unread = conv.unread_count > 0;
+            const isGroup = isGroupJid(conv.contact?.wa_id);
             return (
               <button
                 key={conv.id}
@@ -90,7 +138,7 @@ export function ConversationList({
                 )}
               >
                 <Avatar className={cn('h-9 w-9 shrink-0', unread && 'ring-2 ring-success ring-offset-1 ring-offset-background')}>
-                  <AvatarFallback>{label.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback>{isGroup ? <Users className="h-4 w-4" /> : label.slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
@@ -101,11 +149,17 @@ export function ConversationList({
                           archivada
                         </Badge>
                       )}
+                      {isGroup && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                          grupo
+                        </Badge>
+                      )}
                       <Badge variant="outline" className="px-1.5 py-0 text-[10px] uppercase">
                         {channelLabel[conv.channel]}
                       </Badge>
                     </div>
                   </div>
+                  {conv.instance && <p className="truncate text-[11px] text-muted-foreground/70">{conv.instance.name}</p>}
                   <p className={cn('truncate text-xs', unread ? 'font-medium text-foreground' : 'text-muted-foreground')}>
                     {conv.last_message_preview || 'Sin mensajes'}
                   </p>
