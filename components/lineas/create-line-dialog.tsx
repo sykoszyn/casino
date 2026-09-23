@@ -29,6 +29,9 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
   const [name, setName] = useState('');
   const [connectionType, setConnectionType] = useState<ConnectionType>('qr');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [phoneNumberId, setPhoneNumberId] = useState('');
+  const [wabaId, setWabaId] = useState('');
+  const [accessToken, setAccessToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [instance, setInstance] = useState<WhatsappInstance | null>(null);
@@ -39,6 +42,9 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
     setName('');
     setConnectionType('qr');
     setPhoneNumber('');
+    setPhoneNumberId('');
+    setWabaId('');
+    setAccessToken('');
     setError(null);
     setInstance(null);
     setPairingCode(null);
@@ -70,6 +76,9 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
             setStep('connected');
             setTimeout(() => setOpen(false), 1800);
           }
+          if (updated.status === 'error') {
+            setError(updated.error_message || 'No se pudo conectar');
+          }
         }
       )
       .subscribe();
@@ -85,9 +94,16 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
     setLoading(true);
     setError(null);
 
+    const insertPayload: Record<string, unknown> = { project_id: projectId, name, connection_type: connectionType };
+    if (connectionType === 'cloud_api') {
+      insertPayload.cloud_phone_number_id = phoneNumberId;
+      insertPayload.cloud_waba_id = wabaId || null;
+      insertPayload.cloud_access_token = accessToken;
+    }
+
     const { data: created, error: insertError } = await supabase
       .from('whatsapp_instances')
-      .insert({ project_id: projectId, name, connection_type: connectionType })
+      .insert(insertPayload)
       .select('*')
       .single();
 
@@ -103,9 +119,11 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
     try {
       if (connectionType === 'qr') {
         await whatsappBackend.connect(created.id);
-      } else {
+      } else if (connectionType === 'pairing_code') {
         const { code } = await whatsappBackend.requestPairingCode(created.id, phoneNumber);
         setPairingCode(code);
+      } else {
+        await whatsappBackend.cloudConnect(created.id);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar la conexión con el backend de WhatsApp');
@@ -136,7 +154,7 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
 
               <div className="space-y-1.5">
                 <Label>Método de vinculación</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
                     onClick={() => setConnectionType('qr')}
@@ -151,6 +169,13 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
                   >
                     Código de 8 dígitos
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setConnectionType('cloud_api')}
+                    className={`rounded-md border px-3 py-2 text-sm ${connectionType === 'cloud_api' ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
+                  >
+                    API oficial (Meta)
+                  </button>
                 </div>
               </div>
 
@@ -161,10 +186,51 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
                 </div>
               )}
 
+              {connectionType === 'cloud_api' && (
+                <div className="space-y-3 rounded-md border border-border p-3">
+                  <p className="text-xs text-muted-foreground">
+                    Datos del panel de Meta for Developers (tu app &gt; WhatsApp &gt; Configuración de la API).
+                  </p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cloud-phone-id">Identificador de número de teléfono</Label>
+                    <Input
+                      id="cloud-phone-id"
+                      required
+                      value={phoneNumberId}
+                      onChange={(e) => setPhoneNumberId(e.target.value)}
+                      placeholder="1322064654326807"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cloud-waba-id">ID de cuenta de WhatsApp Business</Label>
+                    <Input id="cloud-waba-id" value={wabaId} onChange={(e) => setWabaId(e.target.value)} placeholder="1108877058484743" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="cloud-token">Token de acceso permanente</Label>
+                    <Input
+                      id="cloud-token"
+                      type="password"
+                      required
+                      value={accessToken}
+                      onChange={(e) => setAccessToken(e.target.value)}
+                      placeholder="EAAxxxxxxxx..."
+                    />
+                  </div>
+                </div>
+              )}
+
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
             <DialogFooter>
-              <Button type="submit" disabled={loading || !name || (connectionType === 'pairing_code' && !phoneNumber)}>
+              <Button
+                type="submit"
+                disabled={
+                  loading ||
+                  !name ||
+                  (connectionType === 'pairing_code' && !phoneNumber) ||
+                  (connectionType === 'cloud_api' && (!phoneNumberId || !accessToken))
+                }
+              >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Continuar'}
               </Button>
             </DialogFooter>
@@ -174,11 +240,19 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
         {step === 'waiting' && (
           <div>
             <DialogHeader>
-              <DialogTitle>{connectionType === 'qr' ? 'Escaneá el código QR' : 'Ingresá el código en tu WhatsApp'}</DialogTitle>
+              <DialogTitle>
+                {connectionType === 'qr'
+                  ? 'Escaneá el código QR'
+                  : connectionType === 'pairing_code'
+                    ? 'Ingresá el código en tu WhatsApp'
+                    : 'Validando credenciales con Meta...'}
+              </DialogTitle>
               <DialogDescription>
                 {connectionType === 'qr'
                   ? 'Abrí WhatsApp > Dispositivos vinculados > Vincular un dispositivo y escaneá este código.'
-                  : 'Abrí WhatsApp > Dispositivos vinculados > Vincular con número de teléfono e ingresá el código.'}
+                  : connectionType === 'pairing_code'
+                    ? 'Abrí WhatsApp > Dispositivos vinculados > Vincular con número de teléfono e ingresá el código.'
+                    : 'Estamos confirmando el Identificador de número y el token con la API de Meta.'}
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center justify-center gap-4 py-8">
@@ -195,10 +269,14 @@ export function CreateLineDialog({ projectId }: { projectId: string }) {
                     <span className="text-xs">Generando QR...</span>
                   </div>
                 )
-              ) : pairingCode ? (
-                <div className="rounded-lg border border-border bg-secondary/40 px-8 py-6 text-center">
-                  <p className="text-3xl font-bold tracking-[0.3em]">{pairingCode}</p>
-                </div>
+              ) : connectionType === 'pairing_code' ? (
+                pairingCode ? (
+                  <div className="rounded-lg border border-border bg-secondary/40 px-8 py-6 text-center">
+                    <p className="text-3xl font-bold tracking-[0.3em]">{pairingCode}</p>
+                  </div>
+                ) : (
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                )
               ) : (
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               )}

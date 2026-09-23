@@ -75,6 +75,9 @@ export function LineCard({ instance }: { instance: WhatsappInstance }) {
           <Phone className="h-3.5 w-3.5" />
           {instance.phone_number || 'Sin número asignado'}
         </div>
+        <p className="text-xs text-muted-foreground/70">
+          {instance.connection_type === 'cloud_api' ? 'API oficial de Meta' : 'Conexión QR / código'}
+        </p>
 
         {instance.status === 'error' && instance.error_message && (
           <p className="rounded-md bg-destructive/10 px-2 py-1.5 text-xs text-destructive">{instance.error_message}</p>

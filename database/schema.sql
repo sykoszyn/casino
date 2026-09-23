@@ -35,21 +35,33 @@ create table if not exists public.whatsapp_instances (
   name               text not null default 'Nueva línea',
   phone_number       text,
   connection_type    text not null default 'qr'
-                     check (connection_type in ('qr', 'pairing_code')),
+                     check (connection_type in ('qr', 'pairing_code', 'cloud_api')),
   pairing_code       text,
   qr_code            text,                 -- data URL del QR vigente (transitorio)
   status             text not null default 'disconnected'
                      check (status in ('disconnected', 'connecting', 'qr_pending', 'connected', 'error')),
   error_message      text,
   session_data       jsonb not null default '{}'::jsonb,  -- creds/keys de Baileys (useMultiFileAuthState serializado)
+  cloud_phone_number_id text,              -- API oficial de Meta: Phone Number ID
+  cloud_waba_id          text,             -- API oficial de Meta: WhatsApp Business Account ID
+  cloud_access_token     text,             -- API oficial de Meta: token de acceso permanente (usuario del sistema)
   last_connected_at  timestamptz,
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now()
 );
 
 comment on column public.whatsapp_instances.session_data is 'Persistencia de la sesión de Baileys (auth creds) para no re-escanear el QR en cada reinicio.';
+comment on column public.whatsapp_instances.cloud_access_token is 'Token de la API oficial de WhatsApp. Igual que session_data, queda expuesto a cualquier usuario autenticado de la app (mismo modelo de confianza single-owner) — no lo uses si distintos owners no deben verse credenciales entre sí.';
 
 create index if not exists idx_whatsapp_instances_project on public.whatsapp_instances(project_id);
+
+-- si la tabla ya existía de antes de que agregáramos la API oficial de Meta
+alter table public.whatsapp_instances add column if not exists cloud_phone_number_id text;
+alter table public.whatsapp_instances add column if not exists cloud_waba_id text;
+alter table public.whatsapp_instances add column if not exists cloud_access_token text;
+alter table public.whatsapp_instances drop constraint if exists whatsapp_instances_connection_type_check;
+alter table public.whatsapp_instances add constraint whatsapp_instances_connection_type_check
+  check (connection_type in ('qr', 'pairing_code', 'cloud_api'));
 
 -- ----------------------------------------------------------------------------
 -- 3. CONTACTS (clientes finales que escriben por WhatsApp/IG/FB)

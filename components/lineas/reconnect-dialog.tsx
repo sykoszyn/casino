@@ -59,7 +59,11 @@ export function ReconnectDialog({ instance }: { instance: WhatsappInstance }) {
     setConnecting(true);
     setError(null);
     try {
-      await whatsappBackend.connect(instance.id);
+      if (instance.connection_type === 'cloud_api') {
+        await whatsappBackend.cloudConnect(instance.id);
+      } else {
+        await whatsappBackend.connect(instance.id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo iniciar la reconexión');
     } finally {
@@ -83,14 +87,15 @@ export function ReconnectDialog({ instance }: { instance: WhatsappInstance }) {
             <DialogHeader>
               <DialogTitle>Reconectar {instance.name}</DialogTitle>
               <DialogDescription>
-                Si la sesión seguía válida se reconecta sola en unos segundos. Si pide escanear de
-                nuevo, abrí WhatsApp &gt; Dispositivos vinculados &gt; Vincular un dispositivo.
+                {instance.connection_type === 'cloud_api'
+                  ? 'Se va a revalidar el token de acceso con la API de Meta.'
+                  : 'Si la sesión seguía válida se reconecta sola en unos segundos. Si pide escanear de nuevo, abrí WhatsApp > Dispositivos vinculados > Vincular un dispositivo.'}
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center justify-center gap-4 py-8">
               {error && <p className="text-sm text-destructive">{error}</p>}
 
-              {live.qr_code ? (
+              {instance.connection_type !== 'cloud_api' && live.qr_code ? (
                 <div className="rounded-lg bg-white p-3">
                   <Image src={live.qr_code} alt="Código QR de WhatsApp" width={240} height={240} unoptimized />
                 </div>

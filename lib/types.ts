@@ -12,7 +12,7 @@ export interface Project {
 }
 
 export type InstanceStatus = 'disconnected' | 'connecting' | 'qr_pending' | 'connected' | 'error';
-export type ConnectionType = 'qr' | 'pairing_code';
+export type ConnectionType = 'qr' | 'pairing_code' | 'cloud_api';
 
 export interface WhatsappInstance {
   id: string;
@@ -24,6 +24,9 @@ export interface WhatsappInstance {
   qr_code: string | null;
   status: InstanceStatus;
   error_message: string | null;
+  cloud_phone_number_id: string | null;
+  cloud_waba_id: string | null;
+  cloud_access_token: string | null;
   last_connected_at: string | null;
   created_at: string;
   updated_at: string;

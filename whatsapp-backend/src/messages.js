@@ -131,6 +131,101 @@ async function uploadMedia(supabase, sock, msg, projectId, instanceId, type, mim
   }
 }
 
+/**
+ * Crea o actualiza el contacto y su conversación para una línea dada. Común a
+ * Baileys y a la API oficial de Meta, así los dos caminos escriben las
+ * mismas tablas de la misma forma (el Inbox no necesita saber de dónde vino
+ * el mensaje).
+ */
+async function upsertContactAndConversation(supabase, { projectId, instanceId, jid, phoneNumber, contactName }) {
+  // No usamos upsert acá a propósito: si el contacto ya existe y alguien le
+  // puso un nombre a mano, no lo queremos pisar con el nombre de WhatsApp en
+  // cada mensaje nuevo.
+  const { data: existingContact, error: existingContactError } = await supabase
+    .from('contacts')
+    .select('id, name')
+    .eq('project_id', projectId)
+    .eq('wa_id', jid)
+    .maybeSingle();
+
+  if (existingContactError) throw existingContactError;
+
+  let contact;
+  if (existingContact) {
+    const { data, error } = await supabase
+      .from('contacts')
+      .update({
+        whatsapp_instance_id: instanceId,
+        phone_number: phoneNumber,
+        name: existingContact.name ?? contactName,
+      })
+      .eq('id', existingContact.id)
+      .select('id')
+      .single();
+    if (error) throw error;
+    contact = data;
+  } else {
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert({
+        project_id: projectId,
+        whatsapp_instance_id: instanceId,
+        wa_id: jid,
+        name: contactName,
+        phone_number: phoneNumber,
+      })
+      .select('id')
+      .single();
+    if (error) throw error;
+    contact = data;
+  }
+
+  const { data: conversation, error: convError } = await supabase
+    .from('conversations')
+    .upsert(
+      {
+        project_id: projectId,
+        whatsapp_instance_id: instanceId,
+        contact_id: contact.id,
+        channel: 'wa',
+        archived: false, // cualquier actividad nueva desarchiva el chat
+      },
+      { onConflict: 'whatsapp_instance_id,contact_id', ignoreDuplicates: false }
+    )
+    .select('id')
+    .single();
+
+  if (convError) throw convError;
+
+  return { contactId: contact.id, conversationId: conversation.id };
+}
+
+/**
+ * Inserta un mensaje. Usa upsert + el unique constraint de
+ * (whatsapp_instance_id, wa_message_id) para no duplicar un mensaje que
+ * llegue más de una vez (eco de un mensaje propio, reintentos, sync inicial).
+ */
+async function insertMessage(supabase, payload) {
+  const { error } = await supabase.from('messages').upsert(
+    {
+      project_id: payload.projectId,
+      conversation_id: payload.conversationId,
+      whatsapp_instance_id: payload.instanceId,
+      wa_message_id: payload.waMessageId,
+      direction: payload.direction,
+      sender_name: payload.senderName,
+      content: payload.content,
+      message_type: payload.messageType,
+      media_url: payload.mediaUrl,
+      status: payload.status,
+      raw: payload.raw,
+      created_at: payload.createdAt,
+    },
+    { onConflict: 'whatsapp_instance_id,wa_message_id', ignoreDuplicates: true }
+  );
+  if (error) throw error;
+}
+
 async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg) {
   try {
     const rawJid = msg.key.remoteJid;
@@ -151,89 +246,30 @@ async function handleIncomingMessage(supabase, sock, projectId, instanceId, msg)
       mediaUrl = await uploadMedia(supabase, sock, msg, projectId, instanceId, type, mimetype);
     }
 
-    // No usamos upsert acá a propósito: si el contacto ya existe y alguien le
-    // puso un nombre a mano, no lo queremos pisar con el pushName de WhatsApp
-    // en cada mensaje nuevo.
-    const { data: existingContact, error: existingContactError } = await supabase
-      .from('contacts')
-      .select('id, name')
-      .eq('project_id', projectId)
-      .eq('wa_id', jid)
-      .maybeSingle();
+    const { conversationId } = await upsertContactAndConversation(supabase, {
+      projectId,
+      instanceId,
+      jid,
+      phoneNumber,
+      contactName,
+    });
 
-    if (existingContactError) throw existingContactError;
-
-    let contact;
-    if (existingContact) {
-      const { data, error } = await supabase
-        .from('contacts')
-        .update({
-          whatsapp_instance_id: instanceId,
-          phone_number: phoneNumber,
-          name: existingContact.name ?? contactName,
-        })
-        .eq('id', existingContact.id)
-        .select('id')
-        .single();
-      if (error) throw error;
-      contact = data;
-    } else {
-      const { data, error } = await supabase
-        .from('contacts')
-        .insert({
-          project_id: projectId,
-          whatsapp_instance_id: instanceId,
-          wa_id: jid,
-          name: contactName,
-          phone_number: phoneNumber,
-        })
-        .select('id')
-        .single();
-      if (error) throw error;
-      contact = data;
-    }
-
-    const { data: conversation, error: convError } = await supabase
-      .from('conversations')
-      .upsert(
-        {
-          project_id: projectId,
-          whatsapp_instance_id: instanceId,
-          contact_id: contact.id,
-          channel: 'wa',
-          archived: false, // cualquier actividad nueva desarchiva el chat
-        },
-        { onConflict: 'whatsapp_instance_id,contact_id', ignoreDuplicates: false }
-      )
-      .select('id')
-      .single();
-
-    if (convError) throw convError;
-
-    // upsert (no insert) + el unique constraint de (whatsapp_instance_id, wa_message_id):
-    // Baileys puede emitir el mismo mensaje más de una vez (eco de un mensaje
-    // propio, reintentos, sync), y así no queda duplicado en el chat.
-    const { error: msgError } = await supabase.from('messages').upsert(
-      {
-        project_id: projectId,
-        conversation_id: conversation.id,
-        whatsapp_instance_id: instanceId,
-        wa_message_id: msg.key.id,
-        direction: fromMe ? 'outbound' : 'inbound',
-        sender_name: fromMe ? 'Nosotros' : pushName,
-        content: text,
-        message_type: type,
-        media_url: mediaUrl,
-        status: fromMe ? 'sent' : 'delivered',
-        raw: msg,
-        created_at: msg.messageTimestamp
-          ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
-          : new Date().toISOString(),
-      },
-      { onConflict: 'whatsapp_instance_id,wa_message_id', ignoreDuplicates: true }
-    );
-
-    if (msgError) throw msgError;
+    await insertMessage(supabase, {
+      projectId,
+      conversationId,
+      instanceId,
+      waMessageId: msg.key.id,
+      direction: fromMe ? 'outbound' : 'inbound',
+      senderName: fromMe ? 'Nosotros' : pushName,
+      content: text,
+      messageType: type,
+      mediaUrl,
+      status: fromMe ? 'sent' : 'delivered',
+      raw: msg,
+      createdAt: msg.messageTimestamp
+        ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
+        : new Date().toISOString(),
+    });
   } catch (err) {
     console.error('[messages] error procesando mensaje entrante:', err.message);
   }
@@ -244,14 +280,12 @@ const STATUS_RANK = { pending: 0, sent: 1, delivered: 2, read: 3, failed: -1 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Actualiza el estado (sent/delivered/read) de un mensaje ya guardado según
- * las confirmaciones de WhatsApp. La confirmación puede llegar unos
- * milisegundos antes de que termine de guardarse el mensaje (todavía se está
- * subiendo el contacto/conversación), así que reintenta una vez corto antes
- * de rendirse.
+ * Actualiza el estado (sent/delivered/read/failed) de un mensaje ya guardado.
+ * La confirmación puede llegar unos milisegundos antes de que termine de
+ * guardarse el mensaje (todavía se está subiendo el contacto/conversación),
+ * así que reintenta una vez corto antes de rendirse.
  */
-async function updateMessageStatus(supabase, instanceId, waMessageId, waStatus, attempt = 0) {
-  const status = WA_STATUS_MAP[waStatus];
+async function setMessageStatus(supabase, instanceId, waMessageId, status, attempt = 0) {
   if (!status || !waMessageId) return;
 
   const { data: existing, error } = await supabase
@@ -266,7 +300,7 @@ async function updateMessageStatus(supabase, instanceId, waMessageId, waStatus, 
   if (!existing) {
     if (attempt < 3) {
       await sleep(500);
-      return updateMessageStatus(supabase, instanceId, waMessageId, waStatus, attempt + 1);
+      return setMessageStatus(supabase, instanceId, waMessageId, status, attempt + 1);
     }
     return;
   }
@@ -278,4 +312,17 @@ async function updateMessageStatus(supabase, instanceId, waMessageId, waStatus, 
   if (updateError) throw updateError;
 }
 
-module.exports = { handleIncomingMessage, updateMessageStatus };
+/** Variante para Baileys: traduce el código numérico de proto.WebMessageInfo.Status. */
+async function updateMessageStatus(supabase, instanceId, waMessageId, waStatusCode) {
+  const status = WA_STATUS_MAP[waStatusCode];
+  if (!status) return;
+  return setMessageStatus(supabase, instanceId, waMessageId, status);
+}
+
+module.exports = {
+  handleIncomingMessage,
+  updateMessageStatus,
+  setMessageStatus,
+  upsertContactAndConversation,
+  insertMessage,
+};

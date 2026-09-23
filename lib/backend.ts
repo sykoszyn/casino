@@ -17,6 +17,8 @@ export const whatsappBackend = {
       method: 'POST',
       body: JSON.stringify({ phoneNumber }),
     }),
+  cloudConnect: (instanceId: string, credentials?: { phoneNumberId?: string; wabaId?: string; accessToken?: string }) =>
+    request(`/instances/${instanceId}/cloud-connect`, { method: 'POST', body: JSON.stringify(credentials || {}) }),
   disconnect: (instanceId: string) => request(`/instances/${instanceId}/disconnect`, { method: 'POST' }),
   remove: (instanceId: string) => request(`/instances/${instanceId}`, { method: 'DELETE' }),
   status: (instanceId: string) => request(`/instances/${instanceId}/status`),
